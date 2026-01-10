@@ -83,3 +83,17 @@ def gaussian_ll(mean, logscale, sample):
     dist = D.Normal(mean, torch.exp(logscale))
     logp = dist.log_prob(sample)
     return logp.sum(dim=(1,2,3))
+
+def bernoulli_ll(mean, sample, eps=1e-7):
+    """Bernoulli log-likelihood for binarized MNIST.
+    
+    Args:
+        mean: Predicted probability (after sigmoid)
+        sample: Binary observations (0 or 1)
+        eps: Small epsilon for numerical stability
+    """
+    # Clamp mean to avoid numerical issues
+    mean = torch.clamp(mean, eps, 1.0 - eps)
+    # Compute log-likelihood: x*log(p) + (1-x)*log(1-p)
+    logp = sample * torch.log(mean) + (1 - sample) * torch.log(1 - mean)
+    return logp.sum(dim=(1,2,3))

@@ -11,7 +11,7 @@ from collections import OrderedDict as OD
 from torchvision import datasets, transforms, utils
 
 from layers import IAFLayer
-from utils  import * 
+from utils import *
 
 # Model definition
 # ----------------------------------------------------------------------------------------------
@@ -20,6 +20,19 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
         self.register_parameter('h', torch.nn.Parameter(torch.zeros(args.h_size)))
         self.register_parameter('dec_log_stdv', torch.nn.Parameter(torch.Tensor([0.])))
+        
+        # Dataset-specific settings
+        self.dataset = args.dataset
+        if args.dataset == 'mnist':
+            self.in_channels = 1
+            self.out_channels = 1
+            self.image_size = 32 if args.pad_mnist else 28  # Pad to 32x32 or keep 28x28
+            self.use_bernoulli = True
+        else:  # cifar10
+            self.in_channels = 3
+            self.out_channels = 3
+            self.image_size = 32
+            self.use_bernoulli = False
 
         layers = []
         # build network
@@ -34,8 +47,10 @@ class VAE(nn.Module):
 
         self.layers = nn.ModuleList(layers) 
         
-        self.first_conv = nn.Conv2d(3, args.h_size, 4, 2, 1)
-        self.last_conv = nn.ConvTranspose2d(args.h_size, 3, 4, 2, 1)
+        # First conv: input -> hidden
+        self.first_conv = nn.Conv2d(self.in_channels, args.h_size, 4, 2, 1)
+        # Last conv: hidden -> output
+        self.last_conv = nn.ConvTranspose2d(args.h_size, self.out_channels, 4, 2, 1)
 
     def forward(self, input):
         # assumes input is \in [-0.5, 0.5] 
@@ -60,7 +75,13 @@ class VAE(nn.Module):
         x = F.elu(h)
         x = self.last_conv(x)
         
-        x = x.clamp(min=-0.5 + 1. / 512., max=0.5 - 1. / 512.)
+        if self.use_bernoulli:
+            # For MNIST: output is logits, will apply sigmoid later
+            # No clamping needed for Bernoulli
+            pass
+        else:
+            # For CIFAR-10: clamp to [-0.5 + 1/512, 0.5 - 1/512]
+            x = x.clamp(min=-0.5 + 1. / 512., max=0.5 - 1. / 512.)
 
         return x, kl, kl_obj
 
@@ -76,7 +97,10 @@ class VAE(nn.Module):
         x = F.elu(h)
         x = self.last_conv(x)
         
-        return x.clamp(min=-0.5 + 1. / 512., max=0.5 - 1. / 512.)
+        if self.use_bernoulli:
+            return x  # No clamping for Bernoulli
+        else:
+            return x.clamp(min=-0.5 + 1. / 512., max=0.5 - 1. / 512.)
     
     
     def cond_sample(self, input):
@@ -112,7 +136,10 @@ class VAE(nn.Module):
                         
                 x = F.elu(h_copy)
                 x = self.last_conv(x)
-                x = x.clamp(min=-0.5 + 1. / 512., max=0.5 - 1. / 512.)
+                if self.use_bernoulli:
+                    pass  # No clamping for Bernoulli
+                else:
+                    x = x.clamp(min=-0.5 + 1. / 512., max=0.5 - 1. / 512.)
                 outs += [x]
 
                 current += 1
@@ -135,10 +162,16 @@ if __name__ == '__main__':
     parser.add_argument('--free_bits', type=float, default=0.1)
     parser.add_argument('--iaf', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'mnist'],
+                        help='Dataset to use: cifar10 or mnist')
+    parser.add_argument('--pad_mnist', action='store_true',
+                        help='Pad MNIST to 32x32 (matches OpenAI implementation)')
     args = parser.parse_args()
 
-    # create model and ship to GPU
-    model = VAE(args).cuda()
+    # create model and ship to device (GPU if available, else CPU)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'Using device: {device}')
+    model = VAE(args).to(device)
     print(model)
 
     # reproducibility is da best
@@ -146,16 +179,67 @@ if __name__ == '__main__':
 
     opt = torch.optim.Adamax(model.parameters(), lr=args.lr)
 
+    # Helper functions for transforms (must be top-level for pickling)
+    def binarize(x):
+        """Binarize MNIST: threshold at 0.5"""
+        return (x > 0.5).float()
+    
+    def shift_cifar(x):
+        """Shift CIFAR-10 to [-0.5, 0.5]"""
+        return x - 0.5
+    
+    def scale_inv_mnist(x):
+        """Scale inverse for MNIST (Bernoulli output)"""
+        return torch.clamp(x, 0, 1)
+    
+    def scale_inv_cifar(x):
+        """Scale inverse for CIFAR-10"""
+        return x + 0.5
+    
     # create datasets / dataloaders
-    scale_inv = lambda x : x + 0.5
-    ds_transforms = transforms.Compose([transforms.ToTensor(), lambda x : x - 0.5])
-    kwargs = {'num_workers':1, 'pin_memory':True, 'drop_last':True}
-
-    train_loader = torch.utils.data.DataLoader(datasets.CIFAR10('../cl-pytorch/data', train=True, 
-        download=True, transform=ds_transforms), batch_size=args.batch_size, shuffle=True, **kwargs)
-
-    test_loader  = torch.utils.data.DataLoader(datasets.CIFAR10('../cl-pytorch/data', train=False, 
-        download=True, transform=ds_transforms), batch_size=args.batch_size, shuffle=True, **kwargs)
+    data_dir = './data'  # Standard location for datasets
+    # Use num_workers=0 on macOS to avoid multiprocessing issues, or use num_workers=1 with proper functions
+    kwargs = {'num_workers':0, 'pin_memory':False, 'drop_last':True}  # Changed to avoid pickling issues
+    
+    if args.dataset == 'mnist':
+        # MNIST: 28x28 grayscale, binarized
+        # Pad to 32x32 if requested (matches OpenAI implementation)
+        if args.pad_mnist:
+            pad_transform = transforms.Compose([
+                transforms.Pad(2),  # Pad 28x28 -> 32x32
+                transforms.ToTensor(),
+                binarize  # Binarize: threshold at 0.5
+            ])
+        else:
+            pad_transform = transforms.Compose([
+                transforms.ToTensor(),
+                binarize  # Binarize: threshold at 0.5
+            ])
+        
+        train_loader = torch.utils.data.DataLoader(
+            datasets.MNIST(data_dir, train=True, download=True, transform=pad_transform),
+            batch_size=args.batch_size, shuffle=True, **kwargs)
+        
+        test_loader = torch.utils.data.DataLoader(
+            datasets.MNIST(data_dir, train=False, download=True, transform=pad_transform),
+            batch_size=args.batch_size, shuffle=True, **kwargs)
+        
+        scale_inv = scale_inv_mnist
+        image_size = 32 if args.pad_mnist else 28
+        
+    else:  # cifar10
+        scale_inv = scale_inv_cifar
+        ds_transforms = transforms.Compose([transforms.ToTensor(), shift_cifar])
+        
+        train_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR10(data_dir, train=True, download=True, transform=ds_transforms),
+            batch_size=args.batch_size, shuffle=True, **kwargs)
+        
+        test_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR10(data_dir, train=False, download=True, transform=ds_transforms),
+            batch_size=args.batch_size, shuffle=True, **kwargs)
+        
+        image_size = 32
 
     # spawn writer
     model_name = 'NB{}_D{}_Z{}_H{}_BS{}_FB{}_LR{}_IAF{}'.format(args.n_blocks, args.depth, args.z_size, args.h_size, 
@@ -180,13 +264,26 @@ if __name__ == '__main__':
 
         for batch_idx, (input,_) in enumerate(train_loader):
 
-            input = input.cuda()
+            input = input.to(device)
             x, kl, kl_obj = model(input)
 
-            log_pxz = logistic_ll(x, model.dec_log_stdv, sample=input)
-            loss = (kl_obj - log_pxz).sum() / x.size(0)
-            elbo = (kl     - log_pxz)
-            bpd  = elbo / (32 * 32 * 3 * np.log(2.))
+            if model.use_bernoulli:
+                # MNIST: use Bernoulli likelihood
+                from utils import bernoulli_ll
+                # Apply sigmoid to get probabilities
+                probs = torch.sigmoid(x)
+                log_pxz = bernoulli_ll(probs, sample=input)
+                loss = (kl_obj - log_pxz).sum() / x.size(0)
+                elbo = (kl - log_pxz)
+                # Bits per dimension: negative ELBO / (pixels * log(2))
+                n_pixels = model.image_size * model.image_size * 1  # 1 channel for MNIST
+                bpd = elbo / (n_pixels * np.log(2.))
+            else:
+                # CIFAR-10: use logistic likelihood
+                log_pxz = logistic_ll(x, model.dec_log_stdv, sample=input)
+                loss = (kl_obj - log_pxz).sum() / x.size(0)
+                elbo = (kl - log_pxz)
+                bpd = elbo / (32 * 32 * 3 * np.log(2.))
          
             opt.zero_grad()
             loss.backward()
@@ -207,13 +304,24 @@ if __name__ == '__main__':
 
         with torch.no_grad():
             for batch_idx, (input,_) in enumerate(test_loader):
-                input = input.cuda()
+                input = input.to(device)
                 x, kl, kl_obj = model(input)
             
-                log_pxz = logistic_ll(x, model.dec_log_stdv, sample=input)
-                loss = (kl_obj - log_pxz).sum() / x.size(0)
-                elbo = (kl     - log_pxz)
-                bpd  = elbo / (32 * 32 * 3 * np.log(2.))
+                if model.use_bernoulli:
+                    # MNIST: use Bernoulli likelihood
+                    from utils import bernoulli_ll
+                    probs = torch.sigmoid(x)
+                    log_pxz = bernoulli_ll(probs, sample=input)
+                    loss = (kl_obj - log_pxz).sum() / x.size(0)
+                    elbo = (kl - log_pxz)
+                    n_pixels = model.image_size * model.image_size * 1
+                    bpd = elbo / (n_pixels * np.log(2.))
+                else:
+                    # CIFAR-10: use logistic likelihood
+                    log_pxz = logistic_ll(x, model.dec_log_stdv, sample=input)
+                    loss = (kl_obj - log_pxz).sum() / x.size(0)
+                    elbo = (kl - log_pxz)
+                    bpd = elbo / (32 * 32 * 3 * np.log(2.))
                 
                 test_log['kl']         += [kl.mean()]
                 test_log['bpd']        += [bpd.mean()]

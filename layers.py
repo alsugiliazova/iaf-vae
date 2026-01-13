@@ -101,7 +101,7 @@ class IAFLayer(nn.Module):
         x = self.down_conv_a(x)
         
         pz_mean, pz_logsd, rz_mean, rz_logsd, down_context, h_det = x.split([self.z_size] * 4 + [self.h_size] * 2, 1)
-        prior = D.Normal(pz_mean, torch.exp(2 * pz_logsd))
+        prior = D.Normal(pz_mean, torch.exp(pz_logsd))
             
         if sample:
             z = prior.rsample()

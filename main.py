@@ -258,14 +258,27 @@ if __name__ == '__main__':
 
 
     print('starting training')
+    print(f'Training batches per epoch: {len(train_loader)}')
+    print(f'Test batches per epoch: {len(test_loader)}')
+    
+    if len(train_loader) == 0:
+        raise ValueError("Train loader is empty! Check batch_size and dataset.")
+    if len(test_loader) == 0:
+        raise ValueError("Test loader is empty! Check batch_size and dataset.")
+    
     for epoch in range(args.n_epochs):
         model.train()
         train_log = reset_log()
 
         for batch_idx, (input,_) in enumerate(train_loader):
-
-            input = input.to(device)
-            x, kl, kl_obj = model(input)
+            try:
+                input = input.to(device)
+                x, kl, kl_obj = model(input)
+            except Exception as e:
+                print(f'Error in forward pass at epoch {epoch}, batch {batch_idx}: {e}')
+                import traceback
+                traceback.print_exc()
+                raise
 
             if model.use_bernoulli:
                 # MNIST: use Bernoulli likelihood
@@ -295,8 +308,11 @@ if __name__ == '__main__':
             train_log['kl obj']     += [kl_obj.mean()]
             train_log['log p(x|z)'] += [log_pxz.mean()]
 
-        for key, value in train_log.items():
-            print_and_log_scalar(writer, 'train/%s' % key, value, epoch)
+        if len(train_log) > 0:
+            for key, value in train_log.items():
+                print_and_log_scalar(writer, 'train/%s' % key, value, epoch)
+        else:
+            print(f'Epoch {epoch}: No training batches processed!')
         print()
         
         model.eval()
@@ -304,8 +320,14 @@ if __name__ == '__main__':
 
         with torch.no_grad():
             for batch_idx, (input,_) in enumerate(test_loader):
-                input = input.to(device)
-                x, kl, kl_obj = model(input)
+                try:
+                    input = input.to(device)
+                    x, kl, kl_obj = model(input)
+                except Exception as e:
+                    print(f'Error in test forward pass at epoch {epoch}, batch {batch_idx}: {e}')
+                    import traceback
+                    traceback.print_exc()
+                    raise
             
                 if model.use_bernoulli:
                     # MNIST: use Bernoulli likelihood
@@ -346,8 +368,11 @@ if __name__ == '__main__':
             save_image(scale_inv(model.sample(64)), join(sample_dir, 'sample_{}.png'.format(epoch)), nrow=8)
             
 
-        for key, value in test_log.items():
-            print_and_log_scalar(writer, 'test/%s' % key, value, epoch)
+        if len(test_log) > 0:
+            for key, value in test_log.items():
+                print_and_log_scalar(writer, 'test/%s' % key, value, epoch)
+        else:
+            print(f'Epoch {epoch}: No test batches processed!')
         print()
         
         current_test = sum(test_log['bpd']) / len(test_log['bpd']) if len(test_log['bpd']) > 0 else float('inf')

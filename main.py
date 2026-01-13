@@ -350,7 +350,7 @@ if __name__ == '__main__':
             print_and_log_scalar(writer, 'test/%s' % key, value, epoch)
         print()
         
-        current_test = sum(test_log['bpd']) / batch_idx
+        current_test = sum(test_log['bpd']) / len(test_log['bpd']) if len(test_log['bpd']) > 0 else float('inf')
         if current_test < best_test:
             best_test = current_test
             print('saving best model')

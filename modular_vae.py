@@ -45,12 +45,19 @@ class WeakDecoder(nn.Module):
         """
         if self.decoder_type == 'mlp':
             B, C, H, W = h.size()
+            # Ensure we preserve the input channel dimension
+            expected_C = self.args.h_size
+            if C != expected_C:
+                raise ValueError(f"MLP decoder expected input with {expected_C} channels, got {C}")
+            
             input_size = C * H * W
             
             # Create layers dynamically on first forward or if size changed
             if self.fc1 is None or self.input_size != input_size:
                 self.input_size = input_size
                 device = h.device
+                # Store original shape for reshaping
+                self.original_shape = (C, H, W)
                 self.fc1 = nn.Linear(input_size, self.hidden_dim).to(device)
                 self.fc2 = nn.Linear(self.hidden_dim, input_size).to(device)
                 # Register as modules so they're part of the model and trainable
@@ -60,7 +67,11 @@ class WeakDecoder(nn.Module):
             h_flat = h.view(B, -1)
             x = F.elu(self.fc1(h_flat))
             x = self.fc2(x)
-            x = x.view(B, C, H, W)
+            # Use stored original shape to ensure correct reshaping - must match input
+            C_orig, H_orig, W_orig = self.original_shape
+            assert C_orig == expected_C, f"Stored shape has {C_orig} channels, expected {expected_C}"
+            x = x.view(B, C_orig, H_orig, W_orig)
+            assert x.size(1) == expected_C, f"Reshaped output has {x.size(1)} channels, expected {expected_C}"
             return F.elu(x)
         
         elif self.decoder_type == 'small_conv':
@@ -201,13 +212,21 @@ class ModularVAE(nn.Module):
                 z_list.append(z)
                 h_list.append(h_det)
         
-        # Use the final h_det for custom decoder
-        # After all down passes, h has shape (B, h_size + z_size, H, W)
-        # Extract h_det (deterministic part) for custom decoder
-        h_det = h[:, self.args.z_size:, :, :]  # Shape: (B, h_size, H, W)
+        # Use the final h for custom decoder
+        # After all down passes, h has shape (B, h_size, H, W)
+        # Note: down_conv_b outputs h_size channels, so h already has the correct shape
+        # (The z and h_det are concatenated inside down(), but down_conv_b reduces it back to h_size)
         
-        # Apply custom decoder
-        h_decoded = self.decoder(h_det)
+        # Verify h has correct shape
+        if h.size(1) != self.args.h_size:
+            raise ValueError(f"After down pass, h has {h.size(1)} channels, expected {self.args.h_size}")
+        
+        # Apply custom decoder directly to h (which already has h_size channels)
+        h_decoded = self.decoder(h)
+        
+        # Verify decoder output shape matches input
+        if h_decoded.size(1) != self.args.h_size:
+            raise ValueError(f"Decoder output has {h_decoded.size(1)} channels, expected {self.args.h_size}. Input h had {h.size(1)} channels")
         
         # Final output
         x = F.elu(h_decoded)

@@ -1,0 +1,255 @@
+"""
+Modular VAE for encoder-decoder capacity matching experiment.
+
+This allows swapping decoders while keeping the same encoder/posterior.
+"""
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.nn.utils.weight_norm as wn
+import torch.distributions as D
+
+from layers import IAFLayer
+
+
+class WeakDecoder(nn.Module):
+    """Weak decoder: MLP or small conv decoder"""
+    def __init__(self, args, decoder_type='mlp'):
+        super(WeakDecoder, self).__init__()
+        self.args = args
+        self.decoder_type = decoder_type
+        
+        if decoder_type == 'mlp':
+            # MLP decoder: flatten → MLP → reshape
+            # Assuming h_size=160, spatial size after encoder is 16x16
+            self.fc1 = nn.Linear(args.h_size * 16 * 16, 512)
+            self.fc2 = nn.Linear(512, args.h_size * 16 * 16)
+            self.spatial_size = 16  # CIFAR-10: 32x32 → 16x16 after first_conv
+            
+        elif decoder_type == 'small_conv':
+            # Small conv decoder: 1-2 conv layers
+            self.conv1 = wn(nn.Conv2d(args.h_size, args.h_size, 3, 1, 1))
+            self.conv2 = wn(nn.Conv2d(args.h_size, args.h_size, 3, 1, 1))
+    
+    def forward(self, h):
+        """
+        Args:
+            h: Hidden representation from encoder (B, h_size, H, W)
+        Returns:
+            x: Decoded representation (B, h_size, H, W)
+        """
+        if self.decoder_type == 'mlp':
+            B, C, H, W = h.size()
+            h_flat = h.view(B, -1)
+            x = F.elu(self.fc1(h_flat))
+            x = self.fc2(x)
+            x = x.view(B, C, H, W)
+            return F.elu(x)
+        
+        elif self.decoder_type == 'small_conv':
+            x = F.elu(self.conv1(h))
+            x = F.elu(self.conv2(x))
+            return x
+
+
+class ResNetBlock(nn.Module):
+    """ResNet block for strong decoder"""
+    def __init__(self, channels):
+        super(ResNetBlock, self).__init__()
+        self.conv1 = wn(nn.Conv2d(channels, channels, 3, 1, 1))
+        self.conv2 = wn(nn.Conv2d(channels, channels, 3, 1, 1))
+    
+    def forward(self, x):
+        residual = x
+        out = F.elu(self.conv1(x))
+        out = self.conv2(out)
+        return F.elu(out + residual)
+
+
+class StrongDecoder(nn.Module):
+    """Strong decoder: Deep ResNet decoder"""
+    def __init__(self, args, n_blocks=4):
+        super(StrongDecoder, self).__init__()
+        self.args = args
+        
+        # Multiple ResNet blocks
+        blocks = []
+        for _ in range(n_blocks):
+            blocks.append(ResNetBlock(args.h_size))
+        self.blocks = nn.ModuleList(blocks)
+        
+        # Additional conv layers
+        self.conv1 = wn(nn.Conv2d(args.h_size, args.h_size, 3, 1, 1))
+        self.conv2 = wn(nn.Conv2d(args.h_size, args.h_size, 3, 1, 1))
+    
+    def forward(self, h):
+        """
+        Args:
+            h: Hidden representation from encoder (B, h_size, H, W)
+        Returns:
+            x: Decoded representation (B, h_size, H, W)
+        """
+        x = h
+        for block in self.blocks:
+            x = block(x)
+        x = F.elu(self.conv1(x))
+        x = F.elu(self.conv2(x))
+        return x
+
+
+class ModularVAE(nn.Module):
+    """
+    Modular VAE that allows swapping decoders.
+    
+    Encoder: IAFLayer blocks (up pass) - same for both models
+    Decoder: Can be weak (MLP/small conv) or strong (ResNet)
+    """
+    def __init__(self, args, decoder_type='weak', decoder_subtype='mlp'):
+        super(ModularVAE, self).__init__()
+        self.args = args
+        self.decoder_type = decoder_type
+        
+        # Shared encoder components
+        self.register_parameter('h', torch.nn.Parameter(torch.zeros(args.h_size)))
+        self.register_parameter('dec_log_stdv', torch.nn.Parameter(torch.Tensor([0.])))
+        
+        # Encoder: IAFLayer blocks (up pass)
+        layers = []
+        for i in range(args.depth):
+            layer = []
+            for j in range(args.n_blocks):
+                downsample = (i > 0) and (j == 0)
+                layer += [IAFLayer(args, downsample)]
+            layers += [nn.ModuleList(layer)]
+        self.encoder_layers = nn.ModuleList(layers)
+        
+        self.first_conv = nn.Conv2d(3, args.h_size, 4, 2, 1)
+        
+        # Decoder: Different based on decoder_type
+        if decoder_type == 'weak':
+            self.decoder = WeakDecoder(args, decoder_subtype)
+        elif decoder_type == 'strong':
+            self.decoder = StrongDecoder(args)
+        else:
+            raise ValueError(f"Unknown decoder_type: {decoder_type}")
+        
+        # Final output layer
+        self.last_conv = nn.ConvTranspose2d(args.h_size, 3, 4, 2, 1)
+    
+    def encode(self, input):
+        """Encode input through encoder (up pass)"""
+        x = self.first_conv(input)
+        h = self.h.view(1, -1, 1, 1)
+        
+        for layer in self.encoder_layers:
+            for sub_layer in layer:
+                x = sub_layer.up(x)
+        
+        h = h.expand_as(x)
+        self.hid_shape = x[0].size()
+        return h, x
+    
+    def decode(self, h, sample=False):
+        """
+        Decode through decoder and down pass.
+        
+        The down pass through IAFLayer blocks computes the posterior and samples z.
+        After getting z, we apply the custom decoder to reconstruct x.
+        
+        Args:
+            h: Initial hidden state
+            sample: Whether to sample (skip KL computation)
+        """
+        kl, kl_obj = 0., 0.
+        
+        # Down pass through IAFLayer blocks (computes posterior, samples z, computes KL)
+        # This is the "decoder" part that we want to vary
+        # But it also computes the posterior, so we need to keep it
+        # Instead, we'll replace the processing AFTER getting z
+        
+        # Store intermediate representations for custom decoder
+        z_list = []
+        h_list = []
+        
+        for layer in reversed(self.encoder_layers):
+            for sub_layer in reversed(layer):
+                h, curr_kl, curr_kl_obj = sub_layer.down(h, sample=sample)
+                kl += curr_kl
+                kl_obj += curr_kl_obj
+                
+                # Extract z and h_det from h (h = [z, h_det] after down pass)
+                z_size = self.args.z_size
+                z = h[:, :z_size, :, :]
+                h_det = h[:, z_size:, :, :]
+                z_list.append(z)
+                h_list.append(h_det)
+        
+        # Use the final h_det for custom decoder
+        # Or combine all z and h_det representations
+        h_final = h_list[-1] if h_list else h[:, self.args.z_size:, :, :]
+        
+        # Apply custom decoder
+        h_decoded = self.decoder(h_final)
+        
+        # Final output
+        x = F.elu(h_decoded)
+        x = self.last_conv(x)
+        x = x.clamp(min=-0.5 + 1. / 512., max=0.5 - 1. / 512.)
+        
+        return x, kl, kl_obj
+    
+    def forward(self, input):
+        """Full forward pass"""
+        h, _ = self.encode(input)
+        x, kl, kl_obj = self.decode(h, sample=False)
+        return x, kl, kl_obj
+    
+    def sample(self, n_samples=64):
+        """Sample from prior"""
+        h = self.h.view(1, -1, 1, 1)
+        h = h.expand((n_samples, *self.hid_shape))
+        
+        x, _, _ = self.decode(h, sample=True)
+        return x
+    
+    def get_encoder(self):
+        """Extract encoder components for mismatching"""
+        return {
+            'first_conv': self.first_conv,
+            'encoder_layers': self.encoder_layers,
+            'h': self.h,
+            'hid_shape': self.hid_shape
+        }
+    
+    def set_decoder(self, decoder):
+        """Set decoder for mismatching"""
+        self.decoder = decoder
+
+
+def create_mismatched_vae(encoder_model, decoder_model):
+    """
+    Create a VAE with encoder from one model and decoder from another.
+    
+    Args:
+        encoder_model: VAE model to extract encoder from
+        decoder_model: VAE model to extract decoder from
+    
+    Returns:
+        New VAE with mismatched encoder-decoder
+    """
+    # Create new model with encoder's decoder type (will be replaced)
+    args = encoder_model.args
+    mismatched = ModularVAE(args, decoder_type='weak')
+    
+    # Copy encoder components
+    mismatched.first_conv.load_state_dict(encoder_model.first_conv.state_dict())
+    mismatched.encoder_layers.load_state_dict(encoder_model.encoder_layers.state_dict())
+    mismatched.h.data = encoder_model.h.data.clone()
+    mismatched.hid_shape = encoder_model.hid_shape
+    
+    # Copy decoder
+    mismatched.decoder.load_state_dict(decoder_model.decoder.state_dict())
+    mismatched.last_conv.load_state_dict(decoder_model.last_conv.state_dict())
+    mismatched.dec_log_stdv.data = decoder_model.dec_log_stdv.data.clone()
+    
+    return mismatched

@@ -169,7 +169,6 @@ if __name__ == '__main__':
 
     print_and_save_args(args, log_dir)
     print('logging into %s' % log_dir)
-    maybe_create_dir(sample_dir)
     best_test = float('inf')
 
 
@@ -242,7 +241,7 @@ if __name__ == '__main__':
             print_and_log_scalar(writer, 'test/%s' % key, value, epoch)
         print()
         
-        current_test = sum(test_log['bpd']) / batch_idx
+        current_test = sum(test_log['bpd']) / len(test_log['bpd'])
         if current_test < best_test:
             best_test = current_test
             print('saving best model')

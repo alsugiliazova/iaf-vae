@@ -18,13 +18,18 @@ class WeakDecoder(nn.Module):
         super(WeakDecoder, self).__init__()
         self.args = args
         self.decoder_type = decoder_type
+        self.hidden_dim = 512  # Hidden dimension for MLP
         
         if decoder_type == 'mlp':
             # MLP decoder: flatten → MLP → reshape
-            # Assuming h_size=160, spatial size after encoder is 16x16
-            self.fc1 = nn.Linear(args.h_size * 16 * 16, 512)
-            self.fc2 = nn.Linear(512, args.h_size * 16 * 16)
-            self.spatial_size = 16  # CIFAR-10: 32x32 → 16x16 after first_conv
+            # For CIFAR-10: after first_conv (4x4, stride=2, padding=1) -> 16x16
+            # IAFLayer blocks maintain spatial size (stride=1, padding=1)
+            # After down pass: h_det has shape (B, h_size, 16, 16)
+            # So input_size = h_size * 16 * 16 = 160 * 16 * 16 = 40960
+            # We'll create layers dynamically based on actual input size
+            self.fc1 = None
+            self.fc2 = None
+            self.input_size = None
             
         elif decoder_type == 'small_conv':
             # Small conv decoder: 1-2 conv layers
@@ -40,6 +45,18 @@ class WeakDecoder(nn.Module):
         """
         if self.decoder_type == 'mlp':
             B, C, H, W = h.size()
+            input_size = C * H * W
+            
+            # Create layers dynamically on first forward or if size changed
+            if self.fc1 is None or self.input_size != input_size:
+                self.input_size = input_size
+                device = h.device
+                self.fc1 = nn.Linear(input_size, self.hidden_dim).to(device)
+                self.fc2 = nn.Linear(self.hidden_dim, input_size).to(device)
+                # Register as modules so they're part of the model and trainable
+                self.add_module('fc1', self.fc1)
+                self.add_module('fc2', self.fc2)
+            
             h_flat = h.view(B, -1)
             x = F.elu(self.fc1(h_flat))
             x = self.fc2(x)
@@ -185,11 +202,12 @@ class ModularVAE(nn.Module):
                 h_list.append(h_det)
         
         # Use the final h_det for custom decoder
-        # Or combine all z and h_det representations
-        h_final = h_list[-1] if h_list else h[:, self.args.z_size:, :, :]
+        # After all down passes, h has shape (B, h_size + z_size, H, W)
+        # Extract h_det (deterministic part) for custom decoder
+        h_det = h[:, self.args.z_size:, :, :]  # Shape: (B, h_size, H, W)
         
         # Apply custom decoder
-        h_decoded = self.decoder(h_final)
+        h_decoded = self.decoder(h_det)
         
         # Final output
         x = F.elu(h_decoded)

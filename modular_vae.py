@@ -274,17 +274,27 @@ def create_mismatched_vae(encoder_model, decoder_model):
     Returns:
         New VAE with mismatched encoder-decoder
     """
-    # Create new model with encoder's decoder type (will be replaced)
     args = encoder_model.args
-    mismatched = ModularVAE(args, decoder_type='weak')
     
-    # Copy encoder components
+    # Determine decoder type from decoder_model
+    decoder_type = decoder_model.decoder_type
+    decoder_subtype = getattr(decoder_model.decoder, 'decoder_type', None) if decoder_type == 'weak' else None
+    
+    # Create new model with the decoder's type (not encoder's type)
+    if decoder_type == 'weak' and decoder_subtype:
+        mismatched = ModularVAE(args, decoder_type='weak', decoder_subtype=decoder_subtype)
+    elif decoder_type == 'strong':
+        mismatched = ModularVAE(args, decoder_type='strong')
+    else:
+        mismatched = ModularVAE(args, decoder_type='weak')
+    
+    # Copy encoder components from encoder_model
     mismatched.first_conv.load_state_dict(encoder_model.first_conv.state_dict())
     mismatched.encoder_layers.load_state_dict(encoder_model.encoder_layers.state_dict())
     mismatched.h.data = encoder_model.h.data.clone()
     mismatched.hid_shape = encoder_model.hid_shape
     
-    # Copy decoder
+    # Copy decoder from decoder_model (now types match)
     mismatched.decoder.load_state_dict(decoder_model.decoder.state_dict())
     mismatched.last_conv.load_state_dict(decoder_model.last_conv.state_dict())
     mismatched.dec_log_stdv.data = decoder_model.dec_log_stdv.data.clone()

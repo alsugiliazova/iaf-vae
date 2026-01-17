@@ -16,7 +16,8 @@ def load_and_inspect_model(model_path, device='cuda'):
     print(f"Loading model from: {model_path}")
     print("=" * 80)
     
-    model = torch.load(model_path, map_location=device)
+    # Set weights_only=False for full model loading (PyTorch 2.6+ default changed)
+    model = torch.load(model_path, map_location=device, weights_only=False)
     model = model.to(device)
     model.eval()
     

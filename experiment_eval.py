@@ -59,8 +59,9 @@ def run_experiment(weak_model_path, strong_model_path, test_loader, device='cuda
     
     # Load models
     print("\nLoading models...")
-    weak_model = torch.load(weak_model_path, map_location=device)
-    strong_model = torch.load(strong_model_path, map_location=device)
+    # Set weights_only=False for full model loading (PyTorch 2.6+ default changed)
+    weak_model = torch.load(weak_model_path, map_location=device, weights_only=False)
+    strong_model = torch.load(strong_model_path, map_location=device, weights_only=False)
     
     # Print architectures
     print("\n" + "=" * 80)

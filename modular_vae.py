@@ -294,6 +294,14 @@ def create_mismatched_vae(encoder_model, decoder_model):
     mismatched.h.data = encoder_model.h.data.clone()
     mismatched.hid_shape = encoder_model.hid_shape
     
+    # For WeakDecoder with MLP, we need to initialize the layers first
+    # by doing a forward pass, then load the state_dict
+    if decoder_type == 'weak' and decoder_subtype == 'mlp':
+        # Initialize WeakDecoder by doing a dummy forward pass
+        # This creates fc1 and fc2 layers
+        dummy_input = torch.zeros(1, args.h_size, 16, 16).to(encoder_model.h.device)
+        _ = mismatched.decoder(dummy_input)
+    
     # Copy decoder from decoder_model (now types match)
     mismatched.decoder.load_state_dict(decoder_model.decoder.state_dict())
     mismatched.last_conv.load_state_dict(decoder_model.last_conv.state_dict())

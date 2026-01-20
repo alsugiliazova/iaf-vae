@@ -207,9 +207,17 @@ def run_experiment(model_config, arch_config, model_num, total_models):
         return True, total_time, avg_epoch_time
 
 def main():
+    parser = argparse.ArgumentParser(description='Train 2 models with matched parameters: non-IAF first, then IAF')
+    parser.add_argument('--n_epochs', type=int, default=100, help='Number of training epochs (default: 100)')
+    args = parser.parse_args()
+    
+    # Update training config with command-line argument
+    TRAINING_CONFIG['n_epochs'] = args.n_epochs
+    
     print("="*80)
     print("2-Model Comparison: IAF vs Matched VAE")
     print("="*80)
+    print(f"Training for {args.n_epochs} epochs per model")
     
     # Step 1: Count parameters in base model WITH IAF
     print("\nStep 1: Analyzing IAF model (from paper)...")
@@ -259,12 +267,31 @@ def main():
     print("\n" + "="*80)
     print("Step 3: Model Configurations")
     print("="*80)
-    print("\nModels to train:")
-    for i, model in enumerate(MODELS, 1):
+    # Ensure correct order - non-IAF model MUST be first
+    # Find which model is non-IAF and which is IAF
+    non_iaf_model = None
+    iaf_model = None
+    for model in MODELS:
+        if model['iaf'] == 0:
+            non_iaf_model = model
+        elif model['iaf'] == 1:
+            iaf_model = model
+    
+    if non_iaf_model is None or iaf_model is None:
+        raise ValueError("Could not find both non-IAF and IAF models in MODELS list")
+    
+    # Reorder to ensure non-IAF is first
+    MODELS_ORDERED = [non_iaf_model, iaf_model]
+    
+    print("\nModels to train (in order):")
+    for i, model in enumerate(MODELS_ORDERED, 1):
         config = BASE_CONFIG_WITH_IAF if model['use_base_config'] else matched_config
         print(f"  {i}. {model['description']}")
         print(f"     Config: n_blocks={config['n_blocks']}, h_size={config['h_size']}, IAF={model['iaf']}, free_bits={model['free_bits']}")
         print(f"     Parameters: {base_params if model['use_base_config'] else matched_params:,}")
+        print(f"     Name: {model['name']}")
+    
+    print(f"\n✓ Training order verified: {MODELS_ORDERED[0]['name']} (no IAF) → {MODELS_ORDERED[1]['name']} (with IAF)")
     
     # Step 4: Run experiments
     print("\n" + "="*80)
@@ -275,13 +302,13 @@ def main():
     results = []
     timing_info = []
     
-    for i, model_config in enumerate(MODELS, 1):
-        print(f"\n[{i}/{len(MODELS)}] Starting: {model_config['name']}")
+    for i, model_config in enumerate(MODELS_ORDERED, 1):
+        print(f"\n[{i}/{len(MODELS_ORDERED)}] Starting: {model_config['name']} (IAF={model_config['iaf']})")
         
         # Select architecture config
         arch_config = BASE_CONFIG_WITH_IAF if model_config['use_base_config'] else matched_config
         
-        success, total_time, avg_epoch_time = run_experiment(model_config, arch_config, i, len(MODELS))
+        success, total_time, avg_epoch_time = run_experiment(model_config, arch_config, i, len(MODELS_ORDERED))
         results.append((model_config['name'], success))
         timing_info.append({
             'name': model_config['name'],
@@ -303,7 +330,7 @@ def main():
         print(f"{status}: {name}")
     
     successful = sum(1 for _, s in results if s)
-    print(f"\nCompleted {successful}/{len(MODELS)} models successfully")
+    print(f"\nCompleted {successful}/{len(MODELS_ORDERED)} models successfully")
     
     print("\n" + "="*80)
     print("TIMING SUMMARY")

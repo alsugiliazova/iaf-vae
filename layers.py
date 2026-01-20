@@ -170,7 +170,8 @@ class AutoregressivePrior(nn.Module):
         input_layer = MaskedLinear(z_dim, hidden_dim, mask0)
         # Initialize input layer with small weights
         with torch.no_grad():
-            input_layer.weight.data *= 0.1
+            # Small initialization - mask is applied automatically in forward pass
+            nn.init.normal_(input_layer.weight, mean=0.0, std=0.01)
             input_layer.bias.data.zero_()
         layers.append(input_layer)
         layers.append(nn.ELU())
@@ -183,7 +184,7 @@ class AutoregressivePrior(nn.Module):
             hidden_layer = MaskedLinear(hidden_dim, hidden_dim, mask_i)
             # Initialize hidden layers with small weights
             with torch.no_grad():
-                hidden_layer.weight.data *= 0.1
+                nn.init.normal_(hidden_layer.weight, mean=0.0, std=0.01)
                 hidden_layer.bias.data.zero_()
             layers.append(hidden_layer)
             layers.append(nn.ELU())
@@ -195,14 +196,15 @@ class AutoregressivePrior(nn.Module):
         output_layer = MaskedLinear(hidden_dim, 2 * z_dim, mask_out)
         
         # Initialize output layer to produce reasonable priors
-        # Initialize means to ~0 and log_stds to ~0 (std ~1) to match standard Normal
+        # CRITICAL: Initialize close to standard Normal N(0,1) to match baseline
         with torch.no_grad():
-            # Means: initialize to small values near 0
-            output_layer.weight.data[:z_dim, :] *= 0.01
+            # Means: initialize to exactly zero (prior mean = 0)
+            # Mask is applied automatically in forward pass
+            output_layer.weight.data[:z_dim, :].zero_()
             output_layer.bias.data[:z_dim].zero_()
-            # Log_stds: initialize to small negative values (std slightly < 1)
-            output_layer.weight.data[z_dim:, :] *= 0.01
-            output_layer.bias.data[z_dim:].fill_(-0.5)  # log_std ≈ -0.5 means std ≈ 0.6
+            # Log_stds: initialize to zero (std = 1, matching standard Normal)
+            output_layer.weight.data[z_dim:, :].zero_()
+            output_layer.bias.data[z_dim:].zero_()  # log_std = 0 means std = 1
         
         layers.append(output_layer)
         self.net = nn.Sequential(*layers)
@@ -233,15 +235,16 @@ class AutoregressivePrior(nn.Module):
         means = output[:, :z_dim]  # (B, z_dim)
         log_stds = output[:, z_dim:]  # (B, z_dim)
         
-        # Clamp log_std for numerical stability
-        # Use reasonable bounds: std between ~0.01 and ~7.4
-        log_stds = torch.clamp(log_stds, min=-4.6, max=2.0)
+        # CRITICAL: Constrain log_std to reasonable range
+        # This prevents the prior from becoming too sharp (which causes huge KL)
+        # Clamp to ensure std is between ~0.1 and ~2.7 (reasonable for Normal priors)
+        log_stds = torch.clamp(log_stds, min=-2.3, max=1.0)
         
         # Compute standard deviations
         stds = torch.exp(log_stds)
         
-        # Ensure minimum std for numerical stability
-        stds = torch.clamp(stds, min=1e-6)
+        # Additional safety: ensure minimum std
+        stds = torch.clamp(stds, min=0.1, max=2.7)
         
         # Compute log probability: log p(z) = Σ_i log N(z_i | μ_i, σ_i)
         # PyTorch's Normal.log_prob already includes the normalization term

@@ -92,12 +92,18 @@ class VAE(nn.Module):
 
         # If using autoregressive prior, compute global log p(z) and recompute KL
         if self.ar_prior:
+            # Store original shapes for free bits application
+            z_shapes = []
+            logqs_shapes = []
+            
             # Concatenate all z values: each z has shape (B, z_size, H, W)
             # Flatten spatial dimensions and concatenate across layers
             z_flat_list = []
             logqs_flat_list = []
             for z, logqs in zip(all_z, all_logqs):
                 B, C, H, W = z.size()
+                z_shapes.append((B, C, H, W))
+                logqs_shapes.append((B, C, H, W))
                 z_flat = z.view(B, -1)  # (B, z_size * H * W)
                 logqs_flat = logqs.view(B, -1)  # (B, z_size * H * W)
                 z_flat_list.append(z_flat)
@@ -119,7 +125,6 @@ class VAE(nn.Module):
                 ).to(z_all_flat.device)
             
             # Compute log p(z) using autoregressive prior
-            # Get per-dimension log probabilities for free bits
             logps_ar, means_ar, log_stds_ar = self.ar_prior_module(z_all_flat)
             
             # Compute log p(z) per dimension
@@ -127,27 +132,38 @@ class VAE(nn.Module):
             dist_ar = D.Normal(means_ar, stds_ar)
             logps_per_dim = dist_ar.log_prob(z_all_flat)  # (B, total_z_dim)
             
-            # Sanity check: log p(z) should be reasonable
-            # For a standard Normal prior, log p(z) ≈ -0.5 * z^2 - 0.5*log(2π) per dim
-            # For reasonable z values, this is typically between -5 and -0.5 per dimension
-            # So for total_z_dim dimensions, total log p(z) should be roughly between -5*total_z_dim and -0.5*total_z_dim
-            logps_mean = logps_ar.mean().item()
-            logps_min = logps_ar.min().item()
-            if logps_mean < -500 or logps_min < -2000:
-                # This is a warning, but don't crash - let training continue
-                # The initialization should help, but if this persists, there's still an issue
-                pass  # Could add logging here if needed
-            
             # Compute KL per dimension: log q(z|x) - log p(z)
-            kl_per_dim = logqs_all_flat - logps_per_dim  # (B, total_z_dim)
+            kl_per_dim_flat = logqs_all_flat - logps_per_dim  # (B, total_z_dim)
             
-            # Apply free bits: clamp minimum per dimension, then sum
-            # This matches the original implementation which clamps per dimension
-            kl_obj_per_dim = kl_per_dim.clamp(min=self.args.free_bits)  # (B, total_z_dim)
-            kl_obj = kl_obj_per_dim.sum(dim=1)  # (B,)
+            # Reshape KL back to original structure to apply free bits correctly
+            # Match baseline: free bits applied per z_size dimension (across spatial locations)
+            kl_per_layer = []
+            start_idx = 0
+            for (B, C, H, W) in z_shapes:
+                layer_size = C * H * W
+                kl_layer_flat = kl_per_dim_flat[:, start_idx:start_idx + layer_size]
+                kl_layer = kl_layer_flat.view(B, C, H, W)  # (B, z_size, H, W)
+                kl_per_layer.append(kl_layer)
+                start_idx += layer_size
             
-            # Total KL (for logging): sum over all dimensions
-            kl = kl_per_dim.sum(dim=1)  # (B,)
+            # Apply free bits exactly as in baseline: per z_size dimension
+            kl_obj = 0.
+            kl_total = 0.
+            for kl_layer in kl_per_layer:
+                # kl_layer shape: (B, z_size, H, W)
+                # Sum over spatial dims: (B, z_size, H, W) -> (B, z_size)
+                kl_per_z = kl_layer.sum(dim=(-2, -1))  # (B, z_size)
+                
+                # Average over batch and clamp: match baseline behavior
+                kl_obj_per_z = kl_per_z.mean(dim=0, keepdim=True)  # (1, z_size)
+                kl_obj_per_z = kl_obj_per_z.clamp(min=self.args.free_bits)  # (1, z_size)
+                kl_obj_per_z = kl_obj_per_z.expand(kl_per_z.size(0), -1)  # (B, z_size)
+                kl_obj += kl_obj_per_z.sum(dim=1)  # (B,)
+                
+                # Total KL for logging: sum over all dims
+                kl_total += kl_per_z.sum(dim=1)  # (B,)
+            
+            kl = kl_total
 
         x = F.elu(h)
         x = self.last_conv(x)

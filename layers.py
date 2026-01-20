@@ -167,7 +167,12 @@ class AutoregressivePrior(nn.Module):
         mask0 = masks[0]
         if mask0.shape != (hidden_dim, z_dim):
             raise ValueError(f"First mask shape {mask0.shape} doesn't match expected ({hidden_dim}, {z_dim})")
-        layers.append(MaskedLinear(z_dim, hidden_dim, mask0))
+        input_layer = MaskedLinear(z_dim, hidden_dim, mask0)
+        # Initialize input layer with small weights
+        with torch.no_grad():
+            input_layer.weight.data *= 0.1
+            input_layer.bias.data.zero_()
+        layers.append(input_layer)
         layers.append(nn.ELU())
         
         # Hidden layers: hidden_dim -> hidden_dim
@@ -175,15 +180,31 @@ class AutoregressivePrior(nn.Module):
             mask_i = masks[i]
             if mask_i.shape != (hidden_dim, hidden_dim):
                 raise ValueError(f"Hidden mask {i} shape {mask_i.shape} doesn't match expected ({hidden_dim}, {hidden_dim})")
-            layers.append(MaskedLinear(hidden_dim, hidden_dim, mask_i))
+            hidden_layer = MaskedLinear(hidden_dim, hidden_dim, mask_i)
+            # Initialize hidden layers with small weights
+            with torch.no_grad():
+                hidden_layer.weight.data *= 0.1
+                hidden_layer.bias.data.zero_()
+            layers.append(hidden_layer)
             layers.append(nn.ELU())
         
         # Output layer: hidden_dim -> 2*z_dim (mean and log_std for each dimension)
         mask_out = masks[-1]
         if mask_out.shape != (2 * z_dim, hidden_dim):
             raise ValueError(f"Output mask shape {mask_out.shape} doesn't match expected ({2 * z_dim}, {hidden_dim})")
-        layers.append(MaskedLinear(hidden_dim, 2 * z_dim, mask_out))
+        output_layer = MaskedLinear(hidden_dim, 2 * z_dim, mask_out)
         
+        # Initialize output layer to produce reasonable priors
+        # Initialize means to ~0 and log_stds to ~0 (std ~1) to match standard Normal
+        with torch.no_grad():
+            # Means: initialize to small values near 0
+            output_layer.weight.data[:z_dim, :] *= 0.01
+            output_layer.bias.data[:z_dim].zero_()
+            # Log_stds: initialize to small negative values (std slightly < 1)
+            output_layer.weight.data[z_dim:, :] *= 0.01
+            output_layer.bias.data[z_dim:].fill_(-0.5)  # log_std ≈ -0.5 means std ≈ 0.6
+        
+        layers.append(output_layer)
         self.net = nn.Sequential(*layers)
     
     def forward(self, z_flat):
@@ -213,10 +234,18 @@ class AutoregressivePrior(nn.Module):
         log_stds = output[:, z_dim:]  # (B, z_dim)
         
         # Clamp log_std for numerical stability
-        log_stds = torch.clamp(log_stds, min=-10, max=2)
+        # Use reasonable bounds: std between ~0.01 and ~7.4
+        log_stds = torch.clamp(log_stds, min=-4.6, max=2.0)
+        
+        # Compute standard deviations
+        stds = torch.exp(log_stds)
+        
+        # Ensure minimum std for numerical stability
+        stds = torch.clamp(stds, min=1e-6)
         
         # Compute log probability: log p(z) = Σ_i log N(z_i | μ_i, σ_i)
-        dist = D.Normal(means, torch.exp(log_stds))
+        # PyTorch's Normal.log_prob already includes the normalization term
+        dist = D.Normal(means, stds)
         log_prob = dist.log_prob(z_flat).sum(dim=1)  # Sum over dimensions
         
         return log_prob, means, log_stds

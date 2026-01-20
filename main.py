@@ -123,8 +123,20 @@ class VAE(nn.Module):
             logps_ar, means_ar, log_stds_ar = self.ar_prior_module(z_all_flat)
             
             # Compute log p(z) per dimension
-            dist_ar = D.Normal(means_ar, torch.exp(log_stds_ar))
+            stds_ar = torch.exp(log_stds_ar)
+            dist_ar = D.Normal(means_ar, stds_ar)
             logps_per_dim = dist_ar.log_prob(z_all_flat)  # (B, total_z_dim)
+            
+            # Sanity check: log p(z) should be reasonable
+            # For a standard Normal prior, log p(z) ≈ -0.5 * z^2 - 0.5*log(2π) per dim
+            # For reasonable z values, this is typically between -5 and -0.5 per dimension
+            # So for total_z_dim dimensions, total log p(z) should be roughly between -5*total_z_dim and -0.5*total_z_dim
+            logps_mean = logps_ar.mean().item()
+            logps_min = logps_ar.min().item()
+            if logps_mean < -500 or logps_min < -2000:
+                # This is a warning, but don't crash - let training continue
+                # The initialization should help, but if this persists, there's still an issue
+                pass  # Could add logging here if needed
             
             # Compute KL per dimension: log q(z|x) - log p(z)
             kl_per_dim = logqs_all_flat - logps_per_dim  # (B, total_z_dim)

@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+import time
 
 from os.path import join
 from tensorboardX import SummaryWriter
@@ -173,7 +174,11 @@ if __name__ == '__main__':
 
 
     print('starting training')
+    total_start_time = time.time()
+    epoch_times = []
+    
     for epoch in range(args.n_epochs):
+        epoch_start_time = time.time()
         model.train()
         train_log = reset_log()
 
@@ -246,3 +251,23 @@ if __name__ == '__main__':
             best_test = current_test
             print('saving best model')
             torch.save(model.state_dict(), join(log_dir, 'best_model.pth'))
+        
+        epoch_time = time.time() - epoch_start_time
+        epoch_times.append(epoch_time)
+        elapsed_total = time.time() - total_start_time
+        avg_epoch_time = sum(epoch_times) / len(epoch_times)
+        remaining_epochs = args.n_epochs - (epoch + 1)
+        estimated_remaining = avg_epoch_time * remaining_epochs
+        
+        print(f'Epoch {epoch+1}/{args.n_epochs} - Time: {epoch_time:.2f}s | '
+              f'Avg: {avg_epoch_time:.2f}s | '
+              f'Elapsed: {elapsed_total/60:.1f}m | '
+              f'Est. remaining: {estimated_remaining/60:.1f}m')
+        print()
+    
+    total_time = time.time() - total_start_time
+    print('='*60)
+    print('Training completed!')
+    print(f'Total time: {total_time/60:.2f} minutes ({total_time/3600:.2f} hours)')
+    print(f'Average per epoch: {sum(epoch_times)/len(epoch_times):.2f} seconds ({sum(epoch_times)/len(epoch_times)/60:.2f} minutes)')
+    print('='*60)

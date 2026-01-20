@@ -283,6 +283,17 @@ def main():
     # Reorder to ensure non-IAF is first
     MODELS_ORDERED = [non_iaf_model, iaf_model]
     
+    # Explicit verification
+    print(f"\n🔍 DEBUG: Reordering models...")
+    print(f"   Found non-IAF model: {non_iaf_model['name']} (IAF={non_iaf_model['iaf']})")
+    print(f"   Found IAF model: {iaf_model['name']} (IAF={iaf_model['iaf']})")
+    print(f"   MODELS_ORDERED[0]: {MODELS_ORDERED[0]['name']} (IAF={MODELS_ORDERED[0]['iaf']})")
+    print(f"   MODELS_ORDERED[1]: {MODELS_ORDERED[1]['name']} (IAF={MODELS_ORDERED[1]['iaf']})")
+    
+    # Verify order is correct
+    assert MODELS_ORDERED[0]['iaf'] == 0, f"ERROR: First model must have IAF=0, got {MODELS_ORDERED[0]['iaf']}"
+    assert MODELS_ORDERED[1]['iaf'] == 1, f"ERROR: Second model must have IAF=1, got {MODELS_ORDERED[1]['iaf']}"
+    
     print("\nModels to train (in order):")
     for i, model in enumerate(MODELS_ORDERED, 1):
         config = BASE_CONFIG_WITH_IAF if model['use_base_config'] else matched_config
@@ -304,6 +315,7 @@ def main():
     
     for i, model_config in enumerate(MODELS_ORDERED, 1):
         print(f"\n[{i}/{len(MODELS_ORDERED)}] Starting: {model_config['name']} (IAF={model_config['iaf']})")
+        print(f"   VERIFY: This should be {'non-IAF' if model_config['iaf'] == 0 else 'IAF'} model")
         
         # Select architecture config
         arch_config = BASE_CONFIG_WITH_IAF if model_config['use_base_config'] else matched_config

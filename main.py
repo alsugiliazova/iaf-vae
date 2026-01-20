@@ -11,7 +11,7 @@ from torchvision.utils import save_image
 from collections import OrderedDict as OD 
 from torchvision import datasets, transforms, utils
 
-from layers import IAFLayer
+from layers import IAFLayer, AutoregressivePrior
 from utils  import * 
 
 # Model definition
@@ -21,6 +21,13 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
         self.register_parameter('h', torch.nn.Parameter(torch.zeros(args.h_size)))
         self.register_parameter('dec_log_stdv', torch.nn.Parameter(torch.Tensor([0.])))
+        
+        self.args = args
+        self.ar_prior = getattr(args, 'ar_prior', 0)
+        
+        # When using autoregressive prior, disable IAF (use diagonal posterior)
+        if self.ar_prior:
+            args.iaf = 0
 
         layers = []
         # build network
@@ -37,11 +44,24 @@ class VAE(nn.Module):
         
         self.first_conv = nn.Conv2d(3, args.h_size, 4, 2, 1)
         self.last_conv = nn.ConvTranspose2d(args.h_size, 3, 4, 2, 1)
+        
+        # Initialize autoregressive prior if enabled
+        if self.ar_prior:
+            # We need to determine the total z dimension after all layers
+            # This will be set during first forward pass
+            self.ar_prior_module = None
+            self.total_z_dim = None
 
     def forward(self, input):
         # assumes input is \in [-0.5, 0.5] 
         x = self.first_conv(input)
-        kl, kl_obj = 0., 0.
+        
+        # Initialize kl and kl_obj - will be set based on ar_prior mode
+        if self.ar_prior:
+            kl = None
+            kl_obj = None
+        else:
+            kl, kl_obj = 0., 0.
 
         h = self.h.view(1, -1, 1, 1)
 
@@ -52,11 +72,70 @@ class VAE(nn.Module):
         h = h.expand_as(x)
         self.hid_shape = x[0].size()
 
+        # Collect all z values if using autoregressive prior
+        all_z = [] if self.ar_prior else None
+        all_logqs = [] if self.ar_prior else None
+        
         for layer in reversed(self.layers):
             for sub_layer in reversed(layer):
-                h, curr_kl, curr_kl_obj = sub_layer.down(h)
-                kl     += curr_kl
-                kl_obj += curr_kl_obj
+                if self.ar_prior:
+                    # Store z and logq before computing KL
+                    # We'll compute KL with autoregressive prior after collecting all z
+                    h, curr_kl, curr_kl_obj, z, logqs = sub_layer.down(h, return_z=True)
+                    all_z.append(z)
+                    all_logqs.append(logqs)
+                    # Don't add curr_kl to kl yet - we'll recompute with AR prior
+                else:
+                    h, curr_kl, curr_kl_obj = sub_layer.down(h)
+                    kl     += curr_kl
+                    kl_obj += curr_kl_obj
+
+        # If using autoregressive prior, compute global log p(z) and recompute KL
+        if self.ar_prior:
+            # Concatenate all z values: each z has shape (B, z_size, H, W)
+            # Flatten spatial dimensions and concatenate across layers
+            z_flat_list = []
+            logqs_flat_list = []
+            for z, logqs in zip(all_z, all_logqs):
+                B, C, H, W = z.size()
+                z_flat = z.view(B, -1)  # (B, z_size * H * W)
+                logqs_flat = logqs.view(B, -1)  # (B, z_size * H * W)
+                z_flat_list.append(z_flat)
+                logqs_flat_list.append(logqs_flat)
+            
+            z_all_flat = torch.cat(z_flat_list, dim=1)  # (B, total_z_dim)
+            logqs_all_flat = torch.cat(logqs_flat_list, dim=1)  # (B, total_z_dim)
+            
+            # Initialize autoregressive prior if needed
+            if self.ar_prior_module is None:
+                total_z_dim = z_all_flat.size(1)
+                self.total_z_dim = total_z_dim
+                # Use similar hidden size to IAF (args.h_size)
+                hidden_dim = self.args.h_size
+                self.ar_prior_module = AutoregressivePrior(
+                    z_dim=total_z_dim,
+                    hidden_dim=hidden_dim,
+                    n_layers=2
+                ).to(z_all_flat.device)
+            
+            # Compute log p(z) using autoregressive prior
+            # Get per-dimension log probabilities for free bits
+            logps_ar, means_ar, log_stds_ar = self.ar_prior_module(z_all_flat)
+            
+            # Compute log p(z) per dimension
+            dist_ar = D.Normal(means_ar, torch.exp(log_stds_ar))
+            logps_per_dim = dist_ar.log_prob(z_all_flat)  # (B, total_z_dim)
+            
+            # Compute KL per dimension: log q(z|x) - log p(z)
+            kl_per_dim = logqs_all_flat - logps_per_dim  # (B, total_z_dim)
+            
+            # Apply free bits: clamp minimum per dimension, then sum
+            # This matches the original implementation which clamps per dimension
+            kl_obj_per_dim = kl_per_dim.clamp(min=self.args.free_bits)  # (B, total_z_dim)
+            kl_obj = kl_obj_per_dim.sum(dim=1)  # (B,)
+            
+            # Total KL (for logging): sum over all dimensions
+            kl = kl_per_dim.sum(dim=1)  # (B,)
 
         x = F.elu(h)
         x = self.last_conv(x)
@@ -67,6 +146,9 @@ class VAE(nn.Module):
 
 
     def sample(self, n_samples=64):
+        # For now, use standard sampling even with autoregressive prior
+        # TODO: Implement proper autoregressive prior sampling
+        # (This requires sampling z sequentially and reshaping to spatial structure)
         h = self.h.view(1, -1, 1, 1)
         h = h.expand((n_samples, *self.hid_shape))
         
@@ -135,6 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--free_bits', type=float, default=0.1)
     parser.add_argument('--iaf', type=int, default=1)
+    parser.add_argument('--ar_prior', type=int, default=0, help='Use autoregressive prior (Model C). When enabled, IAF is disabled.')
     parser.add_argument('--lr', type=float, default=1e-3)
     args = parser.parse_args()
 
@@ -159,8 +242,8 @@ if __name__ == '__main__':
         download=True, transform=ds_transforms), batch_size=args.batch_size, shuffle=True, **kwargs)
 
     # spawn writer
-    model_name = 'NB{}_D{}_Z{}_H{}_BS{}_FB{}_LR{}_IAF{}'.format(args.n_blocks, args.depth, args.z_size, args.h_size, 
-                                                                args.batch_size, args.free_bits, args.lr, args.iaf)
+    model_name = 'NB{}_D{}_Z{}_H{}_BS{}_FB{}_LR{}_IAF{}_AR{}'.format(args.n_blocks, args.depth, args.z_size, args.h_size, 
+                                                                args.batch_size, args.free_bits, args.lr, args.iaf, args.ar_prior)
 
     model_name = 'test' if args.debug else model_name
     log_dir    = join('runs', model_name)

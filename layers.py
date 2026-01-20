@@ -49,6 +49,148 @@ class ARMultiConv2d(nn.Module):
         return [conv_layer(x) for conv_layer in self.out_convs]
 
 
+# Autoregressive Prior (MADE-style)
+# -------------------------------------------------------------------------------------------------------
+
+class MaskedLinear(nn.Linear):
+    """Masked linear layer for MADE-style autoregressive networks"""
+    def __init__(self, in_features, out_features, mask, bias=True):
+        super(MaskedLinear, self).__init__(in_features, out_features, bias)
+        self.register_buffer('mask', mask)
+    
+    def forward(self, input):
+        return F.linear(input, self.weight * self.mask, self.bias)
+
+
+def create_masks(n_in, n_out, n_hidden, n_layers, input_order='sequential', output_order='sequential'):
+    """
+    Create masks for MADE-style autoregressive network.
+    
+    Ensures that output dimension i only depends on input dimensions < i.
+    Uses degree-based masking: each unit has a degree, and connections are
+    allowed only from lower-degree to higher-degree units.
+    
+    Args:
+        n_in: Input dimension
+        n_out: Output dimension (should be 2 * n_in for mean and log_std)
+        n_hidden: Hidden dimension
+        n_layers: Number of hidden layers
+        input_order: Ordering of input dimensions (not used, kept for compatibility)
+        output_order: Ordering of output dimensions (not used, kept for compatibility)
+    
+    Returns:
+        List of masks for each layer
+    """
+    masks = []
+    # Input degrees: dimension i has degree i (1-indexed: 1, 2, ..., n_in)
+    input_degrees = torch.arange(1, n_in + 1)
+    
+    # Create degrees for each layer
+    degrees = [input_degrees]
+    for i in range(n_layers + 1):
+        if i == n_layers:
+            # Output layer: n_out should be 2 * n_in (mean and log_std for each dimension)
+            assert n_out == 2 * n_in, f"Output dimension must be 2 * input dimension, got {n_out} != 2 * {n_in}"
+            # Output dimension i (for both mean and log_std) should have degree i+1
+            # This ensures it can depend on inputs with degree <= i (i.e., inputs < i+1)
+            # But we want it to depend on inputs < i, so we need to be careful
+            # Actually, if output i has degree i+1, it can connect to inputs with degree < i+1, i.e., <= i
+            # But we want it to connect to inputs < i, so we need output i to have degree i
+            # Wait, let's think: if output i has degree i, it can connect to inputs with degree < i, i.e., <= i-1
+            # That's exactly what we want! So output i should have degree i.
+            output_degrees = torch.arange(1, n_in + 1).repeat(2)
+            degrees.append(output_degrees)
+        else:
+            # Hidden layer: assign degrees randomly between 1 and n_in (inclusive)
+            # This ensures good connectivity while maintaining autoregressive property
+            degrees.append(torch.randint(1, n_in + 1, (n_hidden,)))
+    
+    # Create masks: connection from unit j (degree d_j) to unit i (degree d_i) is allowed if d_i > d_j
+    for i in range(len(degrees) - 1):
+        in_degrees = degrees[i].unsqueeze(-1)  # (n_in or n_hidden, 1)
+        out_degrees = degrees[i + 1].unsqueeze(0)  # (1, n_hidden or n_out)
+        # Allow connection if output degree > input degree
+        mask = (out_degrees > in_degrees).float()
+        masks.append(mask)
+    
+    return masks
+
+
+class AutoregressivePrior(nn.Module):
+    """
+    Autoregressive Gaussian prior p(z) = ∏i N(z_i | μ_i(z_<i), σ_i(z_<i))
+    
+    Uses MADE-style masked networks to ensure autoregressive structure.
+    The masks ensure that output i only depends on inputs < i, allowing
+    parallel computation of all means/stds.
+    """
+    def __init__(self, z_dim, hidden_dim=128, n_layers=2):
+        """
+        Args:
+            z_dim: Total dimension of z (z_size * H * W after flattening)
+            hidden_dim: Hidden dimension for MLP
+            n_layers: Number of hidden layers
+        """
+        super(AutoregressivePrior, self).__init__()
+        self.z_dim = z_dim
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
+        
+        # Create masks for autoregressive structure
+        masks = create_masks(z_dim, 2 * z_dim, hidden_dim, n_layers)
+        
+        # Build network
+        layers = []
+        # Input layer
+        layers.append(MaskedLinear(z_dim, hidden_dim, masks[0]))
+        layers.append(nn.ELU())
+        
+        # Hidden layers
+        for i in range(1, n_layers):
+            layers.append(MaskedLinear(hidden_dim, hidden_dim, masks[i]))
+            layers.append(nn.ELU())
+        
+        # Output layer (mean and log_std for each dimension)
+        layers.append(MaskedLinear(hidden_dim, 2 * z_dim, masks[-1]))
+        
+        self.net = nn.Sequential(*layers)
+    
+    def forward(self, z_flat):
+        """
+        Compute log p(z) for autoregressive prior.
+        
+        Args:
+            z_flat: Flattened z of shape (B, z_dim) where z_dim = z_size * H * W
+        
+        Returns:
+            log_prob: Log probability of shape (B,)
+            means: Means for each dimension (B, z_dim)
+            log_stds: Log standard deviations for each dimension (B, z_dim)
+        """
+        B = z_flat.size(0)
+        z_dim = z_flat.size(1)
+        
+        if z_dim != self.z_dim:
+            raise ValueError(f"Expected z_dim={self.z_dim}, got {z_dim}")
+        
+        # Forward through masked network
+        # The masks ensure that output i only depends on z_<i
+        output = self.net(z_flat)
+        
+        # Split into means and log_stds
+        means = output[:, :z_dim]  # (B, z_dim)
+        log_stds = output[:, z_dim:]  # (B, z_dim)
+        
+        # Clamp log_std for numerical stability
+        log_stds = torch.clamp(log_stds, min=-10, max=2)
+        
+        # Compute log probability: log p(z) = Σ_i log N(z_i | μ_i, σ_i)
+        dist = D.Normal(means, torch.exp(log_stds))
+        log_prob = dist.log_prob(z_flat).sum(dim=1)  # Sum over dimensions
+        
+        return log_prob, means, log_stds
+
+
 # IAF building block
 # -------------------------------------------------------------------------------------------------------
 
@@ -96,7 +238,7 @@ class IAFLayer(nn.Module):
         return input + 0.1 * h
         
 
-    def down(self, input, sample=False):
+    def down(self, input, sample=False, return_z=False):
         x = F.elu(input)
         x = self.down_conv_a(x)
         
@@ -106,6 +248,7 @@ class IAFLayer(nn.Module):
         if sample:
             z = prior.rsample()
             kl = kl_obj = torch.zeros(input.size(0)).to(input.device)
+            logqs = None
         else:
             posterior = D.Normal(rz_mean + self.qz_mean, torch.exp(rz_logsd + self.qz_logsd))
             
@@ -142,5 +285,8 @@ class IAFLayer(nn.Module):
         
         h = self.down_conv_b(h)
 
-        return input + 0.1 * h, kl, kl_obj 
+        if return_z:
+            return input + 0.1 * h, kl, kl_obj, z, logqs
+        else:
+            return input + 0.1 * h, kl, kl_obj 
 

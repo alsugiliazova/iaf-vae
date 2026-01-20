@@ -56,10 +56,15 @@ class MaskedLinear(nn.Linear):
     """Masked linear layer for MADE-style autoregressive networks"""
     def __init__(self, in_features, out_features, mask, bias=True):
         super(MaskedLinear, self).__init__(in_features, out_features, bias)
+        # Ensure mask has correct shape: (out_features, in_features) to match weight
+        if mask.shape != (out_features, in_features):
+            raise ValueError(f"Mask shape {mask.shape} doesn't match expected ({out_features}, {in_features})")
         self.register_buffer('mask', mask)
     
     def forward(self, input):
-        return F.linear(input, self.weight * self.mask, self.bias)
+        # Weight has shape (out_features, in_features), mask should match
+        masked_weight = self.weight * self.mask
+        return F.linear(input, masked_weight, self.bias)
 
 
 def create_masks(n_in, n_out, n_hidden, n_layers, input_order='sequential', output_order='sequential'):
@@ -107,10 +112,22 @@ def create_masks(n_in, n_out, n_hidden, n_layers, input_order='sequential', outp
     
     # Create masks: connection from unit j (degree d_j) to unit i (degree d_i) is allowed if d_i > d_j
     for i in range(len(degrees) - 1):
-        in_degrees = degrees[i].unsqueeze(-1)  # (n_in or n_hidden, 1)
-        out_degrees = degrees[i + 1].unsqueeze(0)  # (1, n_hidden or n_out)
+        in_deg = degrees[i]  # Shape: (in_dim,)
+        out_deg = degrees[i + 1]  # Shape: (out_dim,)
+        
+        # Expand for broadcasting: (out_dim, 1) and (1, in_dim) -> (out_dim, in_dim)
+        in_degrees = in_deg.unsqueeze(0)  # (1, in_dim)
+        out_degrees = out_deg.unsqueeze(1)  # (out_dim, 1)
+        
         # Allow connection if output degree > input degree
+        # Broadcasting: (out_dim, 1) > (1, in_dim) -> (out_dim, in_dim)
         mask = (out_degrees > in_degrees).float()
+        
+        # Verify mask shape: should be (out_features, in_features) to match weight matrix
+        expected_out = len(out_deg)
+        expected_in = len(in_deg)
+        if mask.shape != (expected_out, expected_in):
+            raise ValueError(f"Mask shape mismatch: got {mask.shape}, expected ({expected_out}, {expected_in})")
         masks.append(mask)
     
     return masks
@@ -139,19 +156,33 @@ class AutoregressivePrior(nn.Module):
         # Create masks for autoregressive structure
         masks = create_masks(z_dim, 2 * z_dim, hidden_dim, n_layers)
         
+        # Verify we have the right number of masks
+        expected_num_masks = n_layers + 1  # input->hidden, hidden->hidden (if any), hidden->output
+        if len(masks) != expected_num_masks:
+            raise ValueError(f"Expected {expected_num_masks} masks, got {len(masks)}")
+        
         # Build network
         layers = []
-        # Input layer
-        layers.append(MaskedLinear(z_dim, hidden_dim, masks[0]))
+        # Input layer: z_dim -> hidden_dim
+        mask0 = masks[0]
+        if mask0.shape != (hidden_dim, z_dim):
+            raise ValueError(f"First mask shape {mask0.shape} doesn't match expected ({hidden_dim}, {z_dim})")
+        layers.append(MaskedLinear(z_dim, hidden_dim, mask0))
         layers.append(nn.ELU())
         
-        # Hidden layers
+        # Hidden layers: hidden_dim -> hidden_dim
         for i in range(1, n_layers):
-            layers.append(MaskedLinear(hidden_dim, hidden_dim, masks[i]))
+            mask_i = masks[i]
+            if mask_i.shape != (hidden_dim, hidden_dim):
+                raise ValueError(f"Hidden mask {i} shape {mask_i.shape} doesn't match expected ({hidden_dim}, {hidden_dim})")
+            layers.append(MaskedLinear(hidden_dim, hidden_dim, mask_i))
             layers.append(nn.ELU())
         
-        # Output layer (mean and log_std for each dimension)
-        layers.append(MaskedLinear(hidden_dim, 2 * z_dim, masks[-1]))
+        # Output layer: hidden_dim -> 2*z_dim (mean and log_std for each dimension)
+        mask_out = masks[-1]
+        if mask_out.shape != (2 * z_dim, hidden_dim):
+            raise ValueError(f"Output mask shape {mask_out.shape} doesn't match expected ({2 * z_dim}, {hidden_dim})")
+        layers.append(MaskedLinear(hidden_dim, 2 * z_dim, mask_out))
         
         self.net = nn.Sequential(*layers)
     

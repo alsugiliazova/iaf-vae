@@ -254,6 +254,86 @@ class AutoregressivePrior(nn.Module):
         return log_prob, means, log_stds
 
 
+# Convolutional Autoregressive Prior (PixelCNN-style)
+# -------------------------------------------------------------------------------------------------------
+
+class ConvARPrior(nn.Module):
+    """
+    Convolutional autoregressive prior p(z) using masked convolutions.
+    
+    Similar to PixelCNN, uses spatial autoregressive structure where
+    z at position (h, w) depends on positions before it in raster order.
+    
+    This preserves spatial structure unlike the fully-connected MADE approach.
+    """
+    def __init__(self, z_size, h_size=64, n_layers=2):
+        """
+        Args:
+            z_size: Number of channels in z (e.g., 32)
+            h_size: Hidden channels for masked convolutions
+            n_layers: Number of masked conv layers
+        """
+        super(ConvARPrior, self).__init__()
+        self.z_size = z_size
+        self.h_size = h_size
+        
+        # Build masked conv network
+        # First layer: type A mask (excludes current pixel entirely)
+        # Subsequent layers: type B mask (includes current pixel from previous layer)
+        layers = []
+        
+        # Input layer (type A - strict autoregressive)
+        layers.append(MaskedConv2d('A', z_size, h_size, 3, 1, 1))
+        layers.append(nn.ELU())
+        
+        # Hidden layers (type B)
+        for _ in range(n_layers - 1):
+            layers.append(MaskedConv2d('B', h_size, h_size, 3, 1, 1))
+            layers.append(nn.ELU())
+        
+        self.net = nn.Sequential(*layers)
+        
+        # Output layers for mean and log_std (type B)
+        self.mean_conv = MaskedConv2d('B', h_size, z_size, 3, 1, 1)
+        self.logstd_conv = MaskedConv2d('B', h_size, z_size, 3, 1, 1)
+        
+        # Initialize output layers to produce N(0,1) prior initially
+        with torch.no_grad():
+            self.mean_conv.weight.data.zero_()
+            self.mean_conv.bias.data.zero_()
+            self.logstd_conv.weight.data.zero_()
+            self.logstd_conv.bias.data.zero_()  # log_std=0 means std=1
+    
+    def forward(self, z):
+        """
+        Compute autoregressive prior parameters for z.
+        
+        Args:
+            z: Latent tensor of shape (B, z_size, H, W)
+        
+        Returns:
+            means: Prior means (B, z_size, H, W)
+            log_stds: Prior log standard deviations (B, z_size, H, W)
+            log_probs: Log probability per dimension (B, z_size, H, W)
+        """
+        # Forward through masked conv network
+        h = self.net(z)
+        
+        # Compute mean and log_std
+        means = self.mean_conv(h)
+        log_stds = self.logstd_conv(h)
+        
+        # Clamp log_std to reasonable range
+        log_stds = torch.clamp(log_stds, min=-2.0, max=2.0)
+        stds = torch.exp(log_stds)
+        
+        # Compute log probability per dimension
+        dist = D.Normal(means, stds)
+        log_probs = dist.log_prob(z)  # (B, z_size, H, W)
+        
+        return means, log_stds, log_probs
+
+
 # IAF building block
 # -------------------------------------------------------------------------------------------------------
 

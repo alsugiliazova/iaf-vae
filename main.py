@@ -11,7 +11,7 @@ from torchvision.utils import save_image
 from collections import OrderedDict as OD 
 from torchvision import datasets, transforms, utils
 
-from layers import IAFLayer, AutoregressivePrior
+from layers import IAFLayer, AutoregressivePrior, ConvARPrior
 from utils  import * 
 
 # Model definition
@@ -48,27 +48,20 @@ class VAE(nn.Module):
         
         # Initialize autoregressive prior if enabled
         if self.ar_prior:
-            # Calculate total z dimension based on architecture
-            # For CIFAR-10 (32x32): after first_conv -> 16x16
-            # Each depth level halves spatial size (depth 0: 16x16, depth 1: 8x8, etc.)
-            total_z_dim = 0
+            # Use convolutional AR prior (PixelCNN-style) that preserves spatial structure
+            # Create one ConvARPrior per spatial resolution (shared across blocks at same resolution)
+            # This is much more parameter-efficient than fully-connected MADE
             base_spatial = 16  # 32x32 input -> 16x16 after first_conv
+            self.ar_prior_modules = nn.ModuleDict()
             for i in range(args.depth):
                 spatial_size = base_spatial // (2 ** i)  # 16, 8, 4, ...
-                # Each depth level has n_blocks, each with z_size latents
-                layer_z_dim = args.n_blocks * args.z_size * spatial_size * spatial_size
-                total_z_dim += layer_z_dim
-            
-            self.total_z_dim = total_z_dim
-            # Use larger hidden dim for AR prior to avoid bottleneck
-            # With z_dim=40960, a hidden_dim of 64 is too small
-            # Use 512 for reasonable capacity (or scale with z_dim)
-            hidden_dim = 512  # Much larger than args.h_size (64)
-            self.ar_prior_module = AutoregressivePrior(
-                z_dim=total_z_dim,
-                hidden_dim=hidden_dim,
-                n_layers=2
-            )
+                # Create a ConvARPrior for this spatial resolution
+                # Use h_size for hidden dim (matches IAF's convolutional AR)
+                self.ar_prior_modules[str(spatial_size)] = ConvARPrior(
+                    z_size=args.z_size,
+                    h_size=args.h_size,
+                    n_layers=2
+                )
 
     def forward(self, input):
         # assumes input is \in [-0.5, 0.5] 
@@ -108,55 +101,28 @@ class VAE(nn.Module):
                     kl     += curr_kl
                     kl_obj += curr_kl_obj
 
-        # If using autoregressive prior, compute global log p(z) and recompute KL
+        # If using autoregressive prior, compute log p(z) using convolutional AR prior
         if self.ar_prior:
-            # Store original shapes for free bits application
-            z_shapes = []
-            logqs_shapes = []
-            
-            # Concatenate all z values: each z has shape (B, z_size, H, W)
-            # Flatten spatial dimensions and concatenate across layers
-            z_flat_list = []
-            logqs_flat_list = []
-            for z, logqs in zip(all_z, all_logqs):
-                B, C, H, W = z.size()
-                z_shapes.append((B, C, H, W))
-                logqs_shapes.append((B, C, H, W))
-                z_flat = z.view(B, -1)  # (B, z_size * H * W)
-                logqs_flat = logqs.view(B, -1)  # (B, z_size * H * W)
-                z_flat_list.append(z_flat)
-                logqs_flat_list.append(logqs_flat)
-            
-            z_all_flat = torch.cat(z_flat_list, dim=1)  # (B, total_z_dim)
-            logqs_all_flat = torch.cat(logqs_flat_list, dim=1)  # (B, total_z_dim)
-            
-            # Compute log p(z) using autoregressive prior
-            logps_ar, means_ar, log_stds_ar = self.ar_prior_module(z_all_flat)
-            
-            # Compute log p(z) per dimension
-            stds_ar = torch.exp(log_stds_ar)
-            dist_ar = D.Normal(means_ar, stds_ar)
-            logps_per_dim = dist_ar.log_prob(z_all_flat)  # (B, total_z_dim)
-            
-            # Compute KL per dimension: log q(z|x) - log p(z)
-            kl_per_dim_flat = logqs_all_flat - logps_per_dim  # (B, total_z_dim)
-            
-            # Reshape KL back to original structure to apply free bits correctly
-            # Match baseline: free bits applied per z_size dimension (across spatial locations)
-            kl_per_layer = []
-            start_idx = 0
-            for (B, C, H, W) in z_shapes:
-                layer_size = C * H * W
-                kl_layer_flat = kl_per_dim_flat[:, start_idx:start_idx + layer_size]
-                kl_layer = kl_layer_flat.view(B, C, H, W)  # (B, z_size, H, W)
-                kl_per_layer.append(kl_layer)
-                start_idx += layer_size
-            
-            # Apply free bits exactly as in baseline: per z_size dimension
+            # Process each z with its corresponding ConvARPrior (based on spatial size)
+            # This preserves spatial structure unlike the flattened FC approach
             kl_obj = 0.
             kl_total = 0.
-            for kl_layer in kl_per_layer:
-                # kl_layer shape: (B, z_size, H, W)
+            
+            for z, logqs in zip(all_z, all_logqs):
+                # z shape: (B, z_size, H, W)
+                # logqs shape: (B, z_size, H, W) - log q(z|x) per dimension
+                B, C, H, W = z.size()
+                
+                # Get the AR prior for this spatial resolution
+                ar_prior = self.ar_prior_modules[str(H)]
+                
+                # Compute AR prior: means, log_stds, log_probs all (B, z_size, H, W)
+                _, _, logps = ar_prior(z)
+                
+                # KL per dimension: log q(z|x) - log p(z)
+                kl_layer = logqs - logps  # (B, z_size, H, W)
+                
+                # Apply free bits exactly as in baseline: per z_size dimension
                 # Sum over spatial dims: (B, z_size, H, W) -> (B, z_size)
                 kl_per_z = kl_layer.sum(dim=(-2, -1))  # (B, z_size)
                 

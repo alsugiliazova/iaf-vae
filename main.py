@@ -25,9 +25,10 @@ class VAE(nn.Module):
         self.args = args
         self.ar_prior = getattr(args, 'ar_prior', 0)
         
-        # When using autoregressive prior, disable IAF (use diagonal posterior)
-        if self.ar_prior:
-            args.iaf = 0
+        # NOTE: Previously this code forced iaf=0 when ar_prior=1
+        # This has been removed to allow testing IAF + AR together
+        # if self.ar_prior:
+        #     args.iaf = 0
 
         layers = []
         # build network

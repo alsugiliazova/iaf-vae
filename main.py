@@ -48,10 +48,24 @@ class VAE(nn.Module):
         
         # Initialize autoregressive prior if enabled
         if self.ar_prior:
-            # We need to determine the total z dimension after all layers
-            # This will be set during first forward pass
-            self.ar_prior_module = None
-            self.total_z_dim = None
+            # Calculate total z dimension based on architecture
+            # For CIFAR-10 (32x32): after first_conv -> 16x16
+            # Each depth level halves spatial size (depth 0: 16x16, depth 1: 8x8, etc.)
+            total_z_dim = 0
+            base_spatial = 16  # 32x32 input -> 16x16 after first_conv
+            for i in range(args.depth):
+                spatial_size = base_spatial // (2 ** i)  # 16, 8, 4, ...
+                # Each depth level has n_blocks, each with z_size latents
+                layer_z_dim = args.n_blocks * args.z_size * spatial_size * spatial_size
+                total_z_dim += layer_z_dim
+            
+            self.total_z_dim = total_z_dim
+            hidden_dim = args.h_size
+            self.ar_prior_module = AutoregressivePrior(
+                z_dim=total_z_dim,
+                hidden_dim=hidden_dim,
+                n_layers=2
+            )
 
     def forward(self, input):
         # assumes input is \in [-0.5, 0.5] 
@@ -112,18 +126,6 @@ class VAE(nn.Module):
             
             z_all_flat = torch.cat(z_flat_list, dim=1)  # (B, total_z_dim)
             logqs_all_flat = torch.cat(logqs_flat_list, dim=1)  # (B, total_z_dim)
-            
-            # Initialize autoregressive prior if needed
-            if self.ar_prior_module is None:
-                total_z_dim = z_all_flat.size(1)
-                self.total_z_dim = total_z_dim
-                # Use similar hidden size to IAF (args.h_size)
-                hidden_dim = self.args.h_size
-                self.ar_prior_module = AutoregressivePrior(
-                    z_dim=total_z_dim,
-                    hidden_dim=hidden_dim,
-                    n_layers=2
-                ).to(z_all_flat.device)
             
             # Compute log p(z) using autoregressive prior
             logps_ar, means_ar, log_stds_ar = self.ar_prior_module(z_all_flat)

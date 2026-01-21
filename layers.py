@@ -414,6 +414,12 @@ class IAFLayer(nn.Module):
                 # Store IAF statistics for analysis
                 # These measure how "active" the IAF layer is
                 with torch.no_grad():
+                    # Compute norms by flattening spatial dims
+                    z_diff = (z - z_before).view(z.size(0), -1)
+                    z_before_flat = z_before.view(z.size(0), -1)
+                    z_change_norm = z_diff.norm(dim=1).mean().item()
+                    z_before_norm = z_before_flat.norm(dim=1).mean().item()
+                    
                     self.iaf_stats = {
                         # Scale statistics (arw_logsd): if |s| ≈ 0, layer is near-identity
                         'scale_mean': arw_logsd.mean().item(),
@@ -426,8 +432,8 @@ class IAFLayer(nn.Module):
                         # Log-det of Jacobian (sum of log-scales)
                         'log_det_mean': arw_logsd.sum(dim=(1,2,3)).mean().item(),
                         # Change in z
-                        'z_change_norm': (z - z_before).norm(dim=(1,2,3)).mean().item(),
-                        'z_change_relative': ((z - z_before).norm(dim=(1,2,3)) / (z_before.norm(dim=(1,2,3)) + 1e-8)).mean().item(),
+                        'z_change_norm': z_change_norm,
+                        'z_change_relative': z_change_norm / (z_before_norm + 1e-8),
                     }
             
                 # the density at the new point is the old one + determinant of transformation

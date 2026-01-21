@@ -252,6 +252,12 @@ if __name__ == '__main__':
     # create model and ship to GPU
     model = VAE(args).cuda()
     print(model)
+    
+    # Count and print parameters
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print("************************************************")
+    print(f'\nTotal parameters: {total_params:,}\n')
+    print("************************************************")
 
     # reproducibility is da best
     set_seed(0)

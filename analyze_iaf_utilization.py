@@ -69,6 +69,128 @@ def collect_iaf_stats(model, dataloader, n_batches=50):
     return averaged_stats
 
 
+def collect_inactive_units_stats(model, dataloader, n_batches=50, threshold=0.01):
+    """
+    Compute inactive units using Burda et al. (IWAE) metric.
+    
+    A latent dimension is "inactive" if the variance of its posterior mean
+    across the dataset is below a threshold. This indicates posterior collapse
+    where q(z_j|x) ≈ p(z_j) for all x.
+    
+    Returns:
+        dict: Per-layer statistics about active/inactive units
+    """
+    model.eval()
+    
+    # Collect posterior means per layer: {(depth, block): list of qz_means}
+    layer_qz_means = defaultdict(list)
+    
+    with torch.no_grad():
+        for batch_idx, (input, _) in enumerate(dataloader):
+            if batch_idx >= n_batches:
+                break
+            
+            input = input.cuda()
+            
+            # Forward pass (up pass stores qz_mean in each layer)
+            _ = model(input)
+            
+            # Collect qz_mean from each IAFLayer
+            # Note: layers are processed in forward order during up pass
+            for depth_idx, layer in enumerate(model.layers):
+                for block_idx, sub_layer in enumerate(layer):
+                    if hasattr(sub_layer, 'qz_mean') and sub_layer.qz_mean is not None:
+                        key = (depth_idx, block_idx)
+                        # qz_mean shape: (B, z_size, H, W)
+                        layer_qz_means[key].append(sub_layer.qz_mean.cpu())
+    
+    # Compute statistics per layer
+    inactive_stats = {}
+    
+    for key, qz_means_list in layer_qz_means.items():
+        # Concatenate across batches: (N, z_size, H, W)
+        all_qz_means = torch.cat(qz_means_list, dim=0)
+        N, z_size, H, W = all_qz_means.shape
+        total_dims = z_size * H * W
+        
+        # Compute variance across dataset for each dimension
+        # Var_x[μ_j(x)] for each spatial location and channel
+        variance_per_dim = torch.var(all_qz_means, dim=0)  # (z_size, H, W)
+        
+        # Count inactive units
+        inactive_mask = variance_per_dim < threshold
+        inactive_count = inactive_mask.sum().item()
+        active_count = total_dims - inactive_count
+        
+        # Also compute per-channel statistics
+        variance_per_channel = variance_per_dim.mean(dim=(1, 2))  # (z_size,)
+        inactive_channels = (variance_per_channel < threshold).sum().item()
+        
+        inactive_stats[key] = {
+            'total_dims': total_dims,
+            'active_dims': active_count,
+            'inactive_dims': inactive_count,
+            'active_pct': 100 * active_count / total_dims,
+            'inactive_pct': 100 * inactive_count / total_dims,
+            'mean_variance': variance_per_dim.mean().item(),
+            'min_variance': variance_per_dim.min().item(),
+            'max_variance': variance_per_dim.max().item(),
+            'z_size': z_size,
+            'spatial': (H, W),
+            'inactive_channels': inactive_channels,
+            'active_channels': z_size - inactive_channels,
+        }
+    
+    return inactive_stats
+
+
+def print_inactive_units_table(stats, threshold=0.01):
+    """Print a formatted table of inactive units statistics."""
+    print("\n" + "="*80)
+    print("INACTIVE UNITS ANALYSIS (Burda et al. IWAE metric)")
+    print("="*80)
+    print(f"\nThreshold: {threshold}")
+    print("A dimension is 'inactive' if Var_x[μ_j(x)] < threshold")
+    print("(i.e., posterior mean doesn't vary across data → collapsed to prior)\n")
+    
+    sorted_keys = sorted(stats.keys())
+    
+    # Print header
+    print(f"{'Layer':<10} | {'Resolution':<10} | {'Active':<12} | {'Inactive':<12} | {'Active %':<10} | {'Mean Var':<10}")
+    print("-"*75)
+    
+    total_active = 0
+    total_inactive = 0
+    total_dims = 0
+    
+    for key in sorted_keys:
+        depth_idx, block_idx = key
+        layer_name = f"D{depth_idx}_B{block_idx}"
+        s = stats[key]
+        
+        resolution = f"{s['spatial'][0]}×{s['spatial'][1]}"
+        
+        print(f"{layer_name:<10} | {resolution:<10} | {s['active_dims']:<12} | {s['inactive_dims']:<12} | {s['active_pct']:<10.1f} | {s['mean_variance']:<10.4f}")
+        
+        total_active += s['active_dims']
+        total_inactive += s['inactive_dims']
+        total_dims += s['total_dims']
+    
+    print("-"*75)
+    total_active_pct = 100 * total_active / total_dims if total_dims > 0 else 0
+    print(f"{'TOTAL':<10} | {'':<10} | {total_active:<12} | {total_inactive:<12} | {total_active_pct:<10.1f} |")
+    
+    print("\n" + "="*80)
+    print("INTERPRETATION:")
+    if total_active_pct > 90:
+        print(f"  ✓ {total_active_pct:.1f}% of latent dimensions are ACTIVE - good utilization!")
+    elif total_active_pct > 70:
+        print(f"  ~ {total_active_pct:.1f}% of latent dimensions are active - moderate utilization")
+    else:
+        print(f"  ✗ Only {total_active_pct:.1f}% of latent dimensions are active - significant posterior collapse!")
+    print("="*80 + "\n")
+
+
 def print_stats_table(stats):
     """Print a formatted table of IAF utilization statistics."""
     print("\n" + "="*80)
@@ -159,6 +281,8 @@ if __name__ == '__main__':
                         help='Batch size for analysis')
     parser.add_argument('--output', type=str, default=None,
                         help='Output file for detailed stats')
+    parser.add_argument('--inactive_threshold', type=float, default=0.01,
+                        help='Threshold for inactive units (Burda et al. metric)')
     
     # Model architecture args (must match trained model)
     parser.add_argument('--n_blocks', type=int, default=4)
@@ -181,11 +305,6 @@ if __name__ == '__main__':
     model.load_state_dict(state_dict)
     print("Model loaded successfully!")
     
-    # Check that IAF is enabled
-    if not args.iaf:
-        print("ERROR: This model does not have IAF enabled. Nothing to analyze.")
-        exit(1)
-    
     # Create test dataloader
     ds_transforms = transforms.Compose([transforms.ToTensor(), lambda x: x - 0.5])
     test_loader = torch.utils.data.DataLoader(
@@ -195,18 +314,32 @@ if __name__ == '__main__':
     
     print(f"Analyzing {args.n_batches} batches...")
     
-    # Collect statistics
-    stats = collect_iaf_stats(model, test_loader, n_batches=args.n_batches)
-    
-    # Print summary table
-    print_stats_table(stats)
-    
-    # Optionally save detailed stats
-    if args.output:
-        save_stats_to_file(stats, args.output)
-    else:
-        # Default output path
+    # Collect IAF transform statistics (only if IAF is enabled)
+    if args.iaf:
+        stats = collect_iaf_stats(model, test_loader, n_batches=args.n_batches)
+        print_stats_table(stats)
+        
+        # Save detailed stats
         import os
         model_dir = os.path.dirname(args.model_path)
-        default_output = os.path.join(model_dir, 'iaf_utilization_stats.txt')
-        save_stats_to_file(stats, default_output)
+        if args.output:
+            save_stats_to_file(stats, args.output)
+        else:
+            default_output = os.path.join(model_dir, 'iaf_utilization_stats.txt')
+            save_stats_to_file(stats, default_output)
+    
+    # Collect inactive units statistics (works for any model)
+    print("\nCollecting inactive units statistics...")
+    
+    # Need to re-create dataloader (iterator was consumed)
+    test_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10('../cl-pytorch/data', train=False, download=True, transform=ds_transforms),
+        batch_size=args.batch_size, shuffle=False, num_workers=1
+    )
+    
+    inactive_stats = collect_inactive_units_stats(
+        model, test_loader, 
+        n_batches=args.n_batches, 
+        threshold=args.inactive_threshold
+    )
+    print_inactive_units_table(inactive_stats, threshold=args.inactive_threshold)

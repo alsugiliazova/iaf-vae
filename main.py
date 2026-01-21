@@ -60,7 +60,10 @@ class VAE(nn.Module):
                 total_z_dim += layer_z_dim
             
             self.total_z_dim = total_z_dim
-            hidden_dim = args.h_size
+            # Use larger hidden dim for AR prior to avoid bottleneck
+            # With z_dim=40960, a hidden_dim of 64 is too small
+            # Use 512 for reasonable capacity (or scale with z_dim)
+            hidden_dim = 512  # Much larger than args.h_size (64)
             self.ar_prior_module = AutoregressivePrior(
                 z_dim=total_z_dim,
                 hidden_dim=hidden_dim,

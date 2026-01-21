@@ -348,6 +348,9 @@ class IAFLayer(nn.Module):
         self.iaf    = args.iaf
         self.ds     = downsample
         self.args   = args
+        
+        # For IAF utilization analysis - stores stats from last forward pass
+        self.iaf_stats = None
 
         if downsample:
             stride, padding, filter_size = 2, 1, 4
@@ -387,6 +390,9 @@ class IAFLayer(nn.Module):
         
         pz_mean, pz_logsd, rz_mean, rz_logsd, down_context, h_det = x.split([self.z_size] * 4 + [self.h_size] * 2, 1)
         prior = D.Normal(pz_mean, torch.exp(pz_logsd))
+        
+        # Reset IAF stats
+        self.iaf_stats = None
             
         if sample:
             z = prior.rsample()
@@ -402,7 +408,27 @@ class IAFLayer(nn.Module):
             if self.iaf:
                 x = self.down_ar_conv(z, context) 
                 arw_mean, arw_logsd = x[0] * 0.1, x[1] * 0.1
+                z_before = z  # Store z before transform for stats
                 z = (z - arw_mean) / torch.exp(arw_logsd)
+                
+                # Store IAF statistics for analysis
+                # These measure how "active" the IAF layer is
+                with torch.no_grad():
+                    self.iaf_stats = {
+                        # Scale statistics (arw_logsd): if |s| ≈ 0, layer is near-identity
+                        'scale_mean': arw_logsd.mean().item(),
+                        'scale_std': arw_logsd.std().item(),
+                        'scale_abs_mean': arw_logsd.abs().mean().item(),
+                        'scale_max': arw_logsd.abs().max().item(),
+                        # Shift statistics (arw_mean)
+                        'shift_abs_mean': arw_mean.abs().mean().item(),
+                        'shift_std': arw_mean.std().item(),
+                        # Log-det of Jacobian (sum of log-scales)
+                        'log_det_mean': arw_logsd.sum(dim=(1,2,3)).mean().item(),
+                        # Change in z
+                        'z_change_norm': (z - z_before).norm(dim=(1,2,3)).mean().item(),
+                        'z_change_relative': ((z - z_before).norm(dim=(1,2,3)) / (z_before.norm(dim=(1,2,3)) + 1e-8)).mean().item(),
+                    }
             
                 # the density at the new point is the old one + determinant of transformation
                 logq = logqs

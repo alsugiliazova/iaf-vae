@@ -1,0 +1,781 @@
+/usr/local/lib/python3.12/dist-packages/torch/nn/utils/weight_norm.py:144: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+VAE(
+  (layers): ModuleList(
+    (0): ModuleList(
+      (0-3): 4 x IAFLayer(
+        (down_conv_b): Conv2d(96, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        (up_conv_a): Conv2d(64, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        (up_conv_b): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        (down_conv_a): Conv2d(64, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+      )
+    )
+    (1): ModuleList(
+      (0): IAFLayer(
+        (down_conv_b): ConvTranspose2d(96, 64, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1))
+        (up_conv_a): Conv2d(64, 192, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1))
+        (up_conv_b): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        (down_conv_a): Conv2d(64, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+      )
+      (1-3): 3 x IAFLayer(
+        (down_conv_b): Conv2d(96, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        (up_conv_a): Conv2d(64, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        (up_conv_b): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        (down_conv_a): Conv2d(64, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+      )
+    )
+  )
+  (first_conv): Conv2d(3, 64, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1))
+  (last_conv): ConvTranspose2d(64, 3, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1))
+)
+************************************************
+
+Total parameters: 2,946,212
+
+************************************************
+Namespace(debug=False, n_blocks=4, depth=2, z_size=32, h_size=64, n_epochs=50, warmup=10, batch_size=128, free_bits=0.4, iaf=0, ar_prior=0, lr=0.002)
+logging into runs/NB4_D2_Z32_H64_BS128_FB0.4_LR0.002_IAF0_AR0
+starting training
+/content/drive/MyDrive/colab_projects/vae/iaf-vae/layers.py:299: UserWarning: `nn.functional.upsample` is deprecated. Use `nn.functional.interpolate` instead.
+  input = F.upsample(input, scale_factor=0.5)
+/content/drive/MyDrive/colab_projects/vae/iaf-vae/layers.py:347: UserWarning: `nn.functional.upsample` is deprecated. Use `nn.functional.interpolate` instead.
+  input = F.upsample(input, scale_factor=2.)
+train/kl                                 @ write 0 = 84.8520
+train/bpd                                @ write 0 = 9.4970
+train/elbo                               @ write 0 = 20222.5020
+train/kl obj                             @ write 0 = 108.3954
+train/log p(x|z)                         @ write 0 = -20137.6504
+
+test/kl                                  @ write 0 = 87.0486
+test/bpd                                 @ write 0 = 8.9397
+test/elbo                                @ write 0 = 19035.7441
+test/kl obj                              @ write 0 = 105.2292
+test/log p(x|z)                          @ write 0 = -18948.6934
+
+saving best model
+Epoch 1/50 - Time: 23.45s | Avg: 23.45s | Elapsed: 0.4m | Est. remaining: 19.1m
+
+train/kl                                 @ write 1 = 100.1520
+train/bpd                                @ write 1 = 8.4058
+train/elbo                               @ write 1 = 17898.8789
+train/kl obj                             @ write 1 = 110.6735
+train/log p(x|z)                         @ write 1 = -17798.7266
+
+test/kl                                  @ write 1 = 118.7316
+test/bpd                                 @ write 1 = 7.8819
+test/elbo                                @ write 1 = 16783.3340
+test/kl obj                              @ write 1 = 122.1535
+test/log p(x|z)                          @ write 1 = -16664.6035
+
+saving best model
+Epoch 2/50 - Time: 23.55s | Avg: 23.50s | Elapsed: 0.8m | Est. remaining: 18.8m
+
+train/kl                                 @ write 2 = 165.5490
+train/bpd                                @ write 2 = 7.4017
+train/elbo                               @ write 2 = 15760.8291
+train/kl obj                             @ write 2 = 166.4296
+train/log p(x|z)                         @ write 2 = -15595.2803
+
+test/kl                                  @ write 2 = 243.5358
+test/bpd                                 @ write 2 = 6.9446
+test/elbo                                @ write 2 = 14787.5322
+test/kl obj                              @ write 2 = 243.5435
+test/log p(x|z)                          @ write 2 = -14543.9951
+
+saving best model
+Epoch 3/50 - Time: 23.07s | Avg: 23.36s | Elapsed: 1.2m | Est. remaining: 18.3m
+
+train/kl                                 @ write 3 = 383.9617
+train/bpd                                @ write 3 = 6.5532
+train/elbo                               @ write 3 = 13954.0693
+train/kl obj                             @ write 3 = 383.9636
+train/log p(x|z)                         @ write 3 = -13570.1064
+
+test/kl                                  @ write 3 = 551.7905
+test/bpd                                 @ write 3 = 6.2020
+test/elbo                                @ write 3 = 13206.3096
+test/kl obj                              @ write 3 = 551.7905
+test/log p(x|z)                          @ write 3 = -12654.5176
+
+saving best model
+Epoch 4/50 - Time: 23.16s | Avg: 23.31s | Elapsed: 1.6m | Est. remaining: 17.9m
+
+train/kl                                 @ write 4 = 781.7200
+train/bpd                                @ write 4 = 5.9604
+train/elbo                               @ write 4 = 12691.7812
+train/kl obj                             @ write 4 = 781.7200
+train/log p(x|z)                         @ write 4 = -11910.0615
+
+test/kl                                  @ write 4 = 1033.5796
+test/bpd                                 @ write 4 = 5.7649
+test/elbo                                @ write 4 = 12275.5615
+test/kl obj                              @ write 4 = 1033.5796
+test/log p(x|z)                          @ write 4 = -11241.9805
+
+saving best model
+Epoch 5/50 - Time: 23.03s | Avg: 23.25s | Elapsed: 1.9m | Est. remaining: 17.4m
+
+train/kl                                 @ write 5 = 1259.7971
+train/bpd                                @ write 5 = 5.6336
+train/elbo                               @ write 5 = 11995.9072
+train/kl obj                             @ write 5 = 1259.7971
+train/log p(x|z)                         @ write 5 = -10736.1104
+
+test/kl                                  @ write 5 = 1471.6755
+test/bpd                                 @ write 5 = 5.5236
+test/elbo                                @ write 5 = 11761.7461
+test/kl obj                              @ write 5 = 1471.6755
+test/log p(x|z)                          @ write 5 = -10290.0703
+
+saving best model
+Epoch 6/50 - Time: 23.35s | Avg: 23.27s | Elapsed: 2.3m | Est. remaining: 17.1m
+
+train/kl                                 @ write 6 = 1635.1122
+train/bpd                                @ write 6 = 5.4516
+train/elbo                               @ write 6 = 11608.4531
+train/kl obj                             @ write 6 = 1635.1125
+train/log p(x|z)                         @ write 6 = -9973.3398
+
+test/kl                                  @ write 6 = 1790.1316
+test/bpd                                 @ write 6 = 5.3824
+test/elbo                                @ write 6 = 11460.9844
+test/kl obj                              @ write 6 = 1790.1316
+test/log p(x|z)                          @ write 6 = -9670.8516
+
+saving best model
+Epoch 7/50 - Time: 23.10s | Avg: 23.25s | Elapsed: 2.7m | Est. remaining: 16.7m
+
+train/kl                                 @ write 7 = 1894.6613
+train/bpd                                @ write 7 = 5.3244
+train/elbo                               @ write 7 = 11337.4775
+train/kl obj                             @ write 7 = 1894.6636
+train/log p(x|z)                         @ write 7 = -9442.8154
+
+test/kl                                  @ write 7 = 1988.4752
+test/bpd                                 @ write 7 = 5.2550
+test/elbo                                @ write 7 = 11189.7451
+test/kl obj                              @ write 7 = 1988.4866
+test/log p(x|z)                          @ write 7 = -9201.2705
+
+saving best model
+Epoch 8/50 - Time: 22.98s | Avg: 23.21s | Elapsed: 3.1m | Est. remaining: 16.2m
+
+train/kl                                 @ write 8 = 2073.3538
+train/bpd                                @ write 8 = 5.2184
+train/elbo                               @ write 8 = 11111.8643
+train/kl obj                             @ write 8 = 2073.4136
+train/log p(x|z)                         @ write 8 = -9038.5107
+
+test/kl                                  @ write 8 = 2181.9370
+test/bpd                                 @ write 8 = 5.1598
+test/elbo                                @ write 8 = 10987.1094
+test/kl obj                              @ write 8 = 2182.0654
+test/log p(x|z)                          @ write 8 = -8805.1719
+
+saving best model
+Epoch 9/50 - Time: 23.02s | Avg: 23.19s | Elapsed: 3.5m | Est. remaining: 15.8m
+
+train/kl                                 @ write 9 = 2211.1824
+train/bpd                                @ write 9 = 5.1190
+train/elbo                               @ write 9 = 10900.1387
+train/kl obj                             @ write 9 = 2211.5818
+train/log p(x|z)                         @ write 9 = -8688.9570
+
+test/kl                                  @ write 9 = 2268.0542
+test/bpd                                 @ write 9 = 5.0801
+test/elbo                                @ write 9 = 10817.3193
+test/kl obj                              @ write 9 = 2268.5061
+test/log p(x|z)                          @ write 9 = -8549.2666
+
+saving best model
+Epoch 10/50 - Time: 23.08s | Avg: 23.18s | Elapsed: 3.9m | Est. remaining: 15.5m
+
+train/kl                                 @ write 10 = 2346.5430
+train/bpd                                @ write 10 = 5.0432
+train/elbo                               @ write 10 = 10738.7803
+train/kl obj                             @ write 10 = 2347.0837
+train/log p(x|z)                         @ write 10 = -8392.2363
+
+test/kl                                  @ write 10 = 2439.4995
+test/bpd                                 @ write 10 = 5.0203
+test/elbo                                @ write 10 = 10690.0254
+test/kl obj                              @ write 10 = 2439.9937
+test/log p(x|z)                          @ write 10 = -8250.5254
+
+saving best model
+Epoch 11/50 - Time: 23.39s | Avg: 23.20s | Elapsed: 4.3m | Est. remaining: 15.1m
+
+train/kl                                 @ write 11 = 2483.5242
+train/bpd                                @ write 11 = 4.9836
+train/elbo                               @ write 11 = 10611.7705
+train/kl obj                             @ write 11 = 2484.1353
+train/log p(x|z)                         @ write 11 = -8128.2466
+
+test/kl                                  @ write 11 = 2563.0999
+test/bpd                                 @ write 11 = 4.9389
+test/elbo                                @ write 11 = 10516.5830
+test/kl obj                              @ write 11 = 2563.8616
+test/log p(x|z)                          @ write 11 = -7953.4834
+
+saving best model
+Epoch 12/50 - Time: 23.17s | Avg: 23.20s | Elapsed: 4.6m | Est. remaining: 14.7m
+
+train/kl                                 @ write 12 = 2602.3494
+train/bpd                                @ write 12 = 4.9348
+train/elbo                               @ write 12 = 10507.9082
+train/kl obj                             @ write 12 = 2603.1208
+train/log p(x|z)                         @ write 12 = -7905.5581
+
+test/kl                                  @ write 12 = 2639.7324
+test/bpd                                 @ write 12 = 4.9794
+test/elbo                                @ write 12 = 10602.8916
+test/kl obj                              @ write 12 = 2640.3855
+test/log p(x|z)                          @ write 12 = -7963.1587
+
+Epoch 13/50 - Time: 23.20s | Avg: 23.20s | Elapsed: 5.0m | Est. remaining: 14.3m
+
+train/kl                                 @ write 13 = 2704.5408
+train/bpd                                @ write 13 = 4.8938
+train/elbo                               @ write 13 = 10420.6602
+train/kl obj                             @ write 13 = 2705.4895
+train/log p(x|z)                         @ write 13 = -7716.1196
+
+test/kl                                  @ write 13 = 2723.5737
+test/bpd                                 @ write 13 = 4.8726
+test/elbo                                @ write 13 = 10375.4043
+test/kl obj                              @ write 13 = 2724.7249
+test/log p(x|z)                          @ write 13 = -7651.8301
+
+saving best model
+Epoch 14/50 - Time: 23.04s | Avg: 23.18s | Elapsed: 5.4m | Est. remaining: 13.9m
+
+train/kl                                 @ write 14 = 2786.2515
+train/bpd                                @ write 14 = 4.8602
+train/elbo                               @ write 14 = 10349.0332
+train/kl obj                             @ write 14 = 2787.3997
+train/log p(x|z)                         @ write 14 = -7562.7822
+
+test/kl                                  @ write 14 = 2805.3535
+test/bpd                                 @ write 14 = 4.8509
+test/elbo                                @ write 14 = 10329.2256
+test/kl obj                              @ write 14 = 2806.7676
+test/log p(x|z)                          @ write 14 = -7523.8721
+
+saving best model
+Epoch 15/50 - Time: 23.25s | Avg: 23.19s | Elapsed: 5.8m | Est. remaining: 13.5m
+
+train/kl                                 @ write 15 = 2865.0708
+train/bpd                                @ write 15 = 4.8305
+train/elbo                               @ write 15 = 10285.7129
+train/kl obj                             @ write 15 = 2866.4043
+train/log p(x|z)                         @ write 15 = -7420.6426
+
+test/kl                                  @ write 15 = 2900.5737
+test/bpd                                 @ write 15 = 4.7998
+test/elbo                                @ write 15 = 10220.3564
+test/kl obj                              @ write 15 = 2902.2312
+test/log p(x|z)                          @ write 15 = -7319.7822
+
+saving best model
+Epoch 16/50 - Time: 23.13s | Avg: 23.19s | Elapsed: 6.2m | Est. remaining: 13.1m
+
+train/kl                                 @ write 16 = 2935.4487
+train/bpd                                @ write 16 = 4.8030
+train/elbo                               @ write 16 = 10227.2412
+train/kl obj                             @ write 16 = 2936.9905
+train/log p(x|z)                         @ write 16 = -7291.7925
+
+test/kl                                  @ write 16 = 2984.9167
+test/bpd                                 @ write 16 = 4.7691
+test/elbo                                @ write 16 = 10155.0596
+test/kl obj                              @ write 16 = 2986.6667
+test/log p(x|z)                          @ write 16 = -7170.1421
+
+saving best model
+Epoch 17/50 - Time: 23.04s | Avg: 23.18s | Elapsed: 6.6m | Est. remaining: 12.7m
+
+train/kl                                 @ write 17 = 3010.3984
+train/bpd                                @ write 17 = 4.7761
+train/elbo                               @ write 17 = 10169.9863
+train/kl obj                             @ write 17 = 3012.1218
+train/log p(x|z)                         @ write 17 = -7159.5874
+
+test/kl                                  @ write 17 = 3033.9336
+test/bpd                                 @ write 17 = 4.7677
+test/elbo                                @ write 17 = 10152.0547
+test/kl obj                              @ write 17 = 3035.9448
+test/log p(x|z)                          @ write 17 = -7118.1221
+
+saving best model
+Epoch 18/50 - Time: 23.34s | Avg: 23.19s | Elapsed: 7.0m | Est. remaining: 12.4m
+
+train/kl                                 @ write 18 = 3069.2695
+train/bpd                                @ write 18 = 4.7570
+train/elbo                               @ write 18 = 10129.2666
+train/kl obj                             @ write 18 = 3071.1204
+train/log p(x|z)                         @ write 18 = -7059.9971
+
+test/kl                                  @ write 18 = 3108.0884
+test/bpd                                 @ write 18 = 4.7160
+test/elbo                                @ write 18 = 10042.0928
+test/kl obj                              @ write 18 = 3109.9072
+test/log p(x|z)                          @ write 18 = -6934.0039
+
+saving best model
+Epoch 19/50 - Time: 23.23s | Avg: 23.19s | Elapsed: 7.3m | Est. remaining: 12.0m
+
+train/kl                                 @ write 19 = 3122.7026
+train/bpd                                @ write 19 = 4.7382
+train/elbo                               @ write 19 = 10089.2373
+train/kl obj                             @ write 19 = 3124.7290
+train/log p(x|z)                         @ write 19 = -6966.5342
+
+test/kl                                  @ write 19 = 3135.8499
+test/bpd                                 @ write 19 = 4.7169
+test/elbo                                @ write 19 = 10043.9258
+test/kl obj                              @ write 19 = 3138.1919
+test/log p(x|z)                          @ write 19 = -6908.0752
+
+Epoch 20/50 - Time: 23.07s | Avg: 23.18s | Elapsed: 7.7m | Est. remaining: 11.6m
+
+train/kl                                 @ write 20 = 3175.5520
+train/bpd                                @ write 20 = 4.7163
+train/elbo                               @ write 20 = 10042.6924
+train/kl obj                             @ write 20 = 3177.6934
+train/log p(x|z)                         @ write 20 = -6867.1411
+
+test/kl                                  @ write 20 = 3198.9707
+test/bpd                                 @ write 20 = 4.6772
+test/elbo                                @ write 20 = 9959.4434
+test/kl obj                              @ write 20 = 3201.2031
+test/log p(x|z)                          @ write 20 = -6760.4727
+
+saving best model
+Epoch 21/50 - Time: 23.24s | Avg: 23.18s | Elapsed: 8.1m | Est. remaining: 11.2m
+
+train/kl                                 @ write 21 = 3236.0681
+train/bpd                                @ write 21 = 4.6999
+train/elbo                               @ write 21 = 10007.6436
+train/kl obj                             @ write 21 = 3238.2966
+train/log p(x|z)                         @ write 21 = -6771.5767
+
+test/kl                                  @ write 21 = 3286.2876
+test/bpd                                 @ write 21 = 4.6769
+test/elbo                                @ write 21 = 9958.7822
+test/kl obj                              @ write 21 = 3288.7432
+test/log p(x|z)                          @ write 21 = -6672.4946
+
+saving best model
+Epoch 22/50 - Time: 23.72s | Avg: 23.21s | Elapsed: 8.5m | Est. remaining: 10.8m
+
+train/kl                                 @ write 22 = 3271.0405
+train/bpd                                @ write 22 = 4.6843
+train/elbo                               @ write 22 = 9974.5430
+train/kl obj                             @ write 22 = 3273.2917
+train/log p(x|z)                         @ write 22 = -6703.5029
+
+test/kl                                  @ write 22 = 3291.1318
+test/bpd                                 @ write 22 = 4.6641
+test/elbo                                @ write 22 = 9931.4336
+test/kl obj                              @ write 22 = 3293.3442
+test/log p(x|z)                          @ write 22 = -6640.3018
+
+saving best model
+Epoch 23/50 - Time: 23.11s | Avg: 23.20s | Elapsed: 8.9m | Est. remaining: 10.4m
+
+train/kl                                 @ write 23 = 3309.4272
+train/bpd                                @ write 23 = 4.6697
+train/elbo                               @ write 23 = 9943.4180
+train/kl obj                             @ write 23 = 3311.7310
+train/log p(x|z)                         @ write 23 = -6633.9907
+
+test/kl                                  @ write 23 = 3332.9907
+test/bpd                                 @ write 23 = 4.6465
+test/elbo                                @ write 23 = 9894.0127
+test/kl obj                              @ write 23 = 3335.5923
+test/log p(x|z)                          @ write 23 = -6561.0225
+
+saving best model
+Epoch 24/50 - Time: 23.18s | Avg: 23.20s | Elapsed: 9.3m | Est. remaining: 10.1m
+
+train/kl                                 @ write 24 = 3338.5193
+train/bpd                                @ write 24 = 4.6569
+train/elbo                               @ write 24 = 9916.0742
+train/kl obj                             @ write 24 = 3340.8713
+train/log p(x|z)                         @ write 24 = -6577.5552
+
+test/kl                                  @ write 24 = 3360.3301
+test/bpd                                 @ write 24 = 4.6498
+test/elbo                                @ write 24 = 9901.1191
+test/kl obj                              @ write 24 = 3362.8894
+test/log p(x|z)                          @ write 24 = -6540.7891
+
+Epoch 25/50 - Time: 23.14s | Avg: 23.20s | Elapsed: 9.7m | Est. remaining: 9.7m
+
+train/kl                                 @ write 25 = 3375.0354
+train/bpd                                @ write 25 = 4.6448
+train/elbo                               @ write 25 = 9890.4141
+train/kl obj                             @ write 25 = 3377.4465
+train/log p(x|z)                         @ write 25 = -6515.3789
+
+test/kl                                  @ write 25 = 3384.5120
+test/bpd                                 @ write 25 = 4.6337
+test/elbo                                @ write 25 = 9866.6572
+test/kl obj                              @ write 25 = 3387.0789
+test/log p(x|z)                          @ write 25 = -6482.1450
+
+saving best model
+Epoch 26/50 - Time: 23.38s | Avg: 23.21s | Elapsed: 10.1m | Est. remaining: 9.3m
+
+train/kl                                 @ write 26 = 3399.9282
+train/bpd                                @ write 26 = 4.6292
+train/elbo                               @ write 26 = 9857.1133
+train/kl obj                             @ write 26 = 3402.3816
+train/log p(x|z)                         @ write 26 = -6457.1851
+
+test/kl                                  @ write 26 = 3430.5730
+test/bpd                                 @ write 26 = 4.5927
+test/elbo                                @ write 26 = 9779.5576
+test/kl obj                              @ write 26 = 3432.9216
+test/log p(x|z)                          @ write 26 = -6348.9844
+
+saving best model
+Epoch 27/50 - Time: 23.25s | Avg: 23.21s | Elapsed: 10.4m | Est. remaining: 8.9m
+
+train/kl                                 @ write 27 = 3425.2319
+train/bpd                                @ write 27 = 4.6242
+train/elbo                               @ write 27 = 9846.4541
+train/kl obj                             @ write 27 = 3427.7371
+train/log p(x|z)                         @ write 27 = -6421.2222
+
+test/kl                                  @ write 27 = 3415.0686
+test/bpd                                 @ write 27 = 4.6127
+test/elbo                                @ write 27 = 9822.0645
+test/kl obj                              @ write 27 = 3417.8076
+test/log p(x|z)                          @ write 27 = -6406.9966
+
+Epoch 28/50 - Time: 23.02s | Avg: 23.20s | Elapsed: 10.8m | Est. remaining: 8.5m
+
+train/kl                                 @ write 28 = 3443.7424
+train/bpd                                @ write 28 = 4.6116
+train/elbo                               @ write 28 = 9819.6514
+train/kl obj                             @ write 28 = 3446.2646
+train/log p(x|z)                         @ write 28 = -6375.9087
+
+test/kl                                  @ write 28 = 3450.1794
+test/bpd                                 @ write 28 = 4.5842
+test/elbo                                @ write 28 = 9761.4531
+test/kl obj                              @ write 28 = 3452.8542
+test/log p(x|z)                          @ write 28 = -6311.2734
+
+saving best model
+Epoch 29/50 - Time: 23.07s | Avg: 23.20s | Elapsed: 11.2m | Est. remaining: 8.1m
+
+train/kl                                 @ write 29 = 3469.7231
+train/bpd                                @ write 29 = 4.6046
+train/elbo                               @ write 29 = 9804.7539
+train/kl obj                             @ write 29 = 3472.2085
+train/log p(x|z)                         @ write 29 = -6335.0308
+
+test/kl                                  @ write 29 = 3484.9937
+test/bpd                                 @ write 29 = 4.6043
+test/elbo                                @ write 29 = 9804.1904
+test/kl obj                              @ write 29 = 3488.0601
+test/log p(x|z)                          @ write 29 = -6319.1968
+
+Epoch 30/50 - Time: 23.19s | Avg: 23.20s | Elapsed: 11.6m | Est. remaining: 7.7m
+
+train/kl                                 @ write 30 = 3487.8225
+train/bpd                                @ write 30 = 4.5921
+train/elbo                               @ write 30 = 9778.1182
+train/kl obj                             @ write 30 = 3490.3052
+train/log p(x|z)                         @ write 30 = -6290.2949
+
+test/kl                                  @ write 30 = 3489.4163
+test/bpd                                 @ write 30 = 4.5819
+test/elbo                                @ write 30 = 9756.4053
+test/kl obj                              @ write 30 = 3491.8442
+test/log p(x|z)                          @ write 30 = -6266.9893
+
+saving best model
+Epoch 31/50 - Time: 23.27s | Avg: 23.20s | Elapsed: 12.0m | Est. remaining: 7.3m
+
+train/kl                                 @ write 31 = 3508.6340
+train/bpd                                @ write 31 = 4.5841
+train/elbo                               @ write 31 = 9761.1201
+train/kl obj                             @ write 31 = 3511.0449
+train/log p(x|z)                         @ write 31 = -6252.4868
+
+test/kl                                  @ write 31 = 3531.9055
+test/bpd                                 @ write 31 = 4.5607
+test/elbo                                @ write 31 = 9711.4121
+test/kl obj                              @ write 31 = 3534.6948
+test/log p(x|z)                          @ write 31 = -6179.5063
+
+saving best model
+Epoch 32/50 - Time: 23.14s | Avg: 23.20s | Elapsed: 12.4m | Est. remaining: 7.0m
+
+train/kl                                 @ write 32 = 3527.4175
+train/bpd                                @ write 32 = 4.5758
+train/elbo                               @ write 32 = 9743.5449
+train/kl obj                             @ write 32 = 3529.8071
+train/log p(x|z)                         @ write 32 = -6216.1279
+
+test/kl                                  @ write 32 = 3563.3157
+test/bpd                                 @ write 32 = 4.6573
+test/elbo                                @ write 32 = 9916.9424
+test/kl obj                              @ write 32 = 3565.2036
+test/log p(x|z)                          @ write 32 = -6353.6270
+
+Epoch 33/50 - Time: 23.33s | Avg: 23.20s | Elapsed: 12.8m | Est. remaining: 6.6m
+
+train/kl                                 @ write 33 = 3544.7751
+train/bpd                                @ write 33 = 4.5696
+train/elbo                               @ write 33 = 9730.2334
+train/kl obj                             @ write 33 = 3547.0771
+train/log p(x|z)                         @ write 33 = -6185.4590
+
+test/kl                                  @ write 33 = 3532.0793
+test/bpd                                 @ write 33 = 4.5333
+test/elbo                                @ write 33 = 9652.9580
+test/kl obj                              @ write 33 = 3534.2944
+test/log p(x|z)                          @ write 33 = -6120.8784
+
+saving best model
+Epoch 34/50 - Time: 23.11s | Avg: 23.20s | Elapsed: 13.1m | Est. remaining: 6.2m
+
+train/kl                                 @ write 34 = 3565.1931
+train/bpd                                @ write 34 = 4.5599
+train/elbo                               @ write 34 = 9709.6797
+train/kl obj                             @ write 34 = 3567.4924
+train/log p(x|z)                         @ write 34 = -6144.4863
+
+test/kl                                  @ write 34 = 3564.8098
+test/bpd                                 @ write 34 = 4.5363
+test/elbo                                @ write 34 = 9659.3145
+test/kl obj                              @ write 34 = 3567.1763
+test/log p(x|z)                          @ write 34 = -6094.5044
+
+Epoch 35/50 - Time: 23.07s | Avg: 23.20s | Elapsed: 13.5m | Est. remaining: 5.8m
+
+train/kl                                 @ write 35 = 3591.0601
+train/bpd                                @ write 35 = 4.5491
+train/elbo                               @ write 35 = 9686.5615
+train/kl obj                             @ write 35 = 3593.3411
+train/log p(x|z)                         @ write 35 = -6095.5015
+
+test/kl                                  @ write 35 = 3597.0325
+test/bpd                                 @ write 35 = 4.5501
+test/elbo                                @ write 35 = 9688.7529
+test/kl obj                              @ write 35 = 3599.2524
+test/log p(x|z)                          @ write 35 = -6091.7197
+
+Epoch 36/50 - Time: 23.35s | Avg: 23.20s | Elapsed: 13.9m | Est. remaining: 5.4m
+
+train/kl                                 @ write 36 = 3611.3857
+train/bpd                                @ write 36 = 4.5418
+train/elbo                               @ write 36 = 9671.1309
+train/kl obj                             @ write 36 = 3613.6277
+train/log p(x|z)                         @ write 36 = -6059.7451
+
+test/kl                                  @ write 36 = 3616.4348
+test/bpd                                 @ write 36 = 4.5959
+test/elbo                                @ write 36 = 9786.3096
+test/kl obj                              @ write 36 = 3618.2529
+test/log p(x|z)                          @ write 36 = -6169.8750
+
+Epoch 37/50 - Time: 23.42s | Avg: 23.21s | Elapsed: 14.3m | Est. remaining: 5.0m
+
+train/kl                                 @ write 37 = 3624.7681
+train/bpd                                @ write 37 = 4.5371
+train/elbo                               @ write 37 = 9661.0615
+train/kl obj                             @ write 37 = 3626.9453
+train/log p(x|z)                         @ write 37 = -6036.2939
+
+test/kl                                  @ write 37 = 3645.3943
+test/bpd                                 @ write 37 = 4.5493
+test/elbo                                @ write 37 = 9687.1309
+test/kl obj                              @ write 37 = 3647.2373
+test/log p(x|z)                          @ write 37 = -6041.7363
+
+Epoch 38/50 - Time: 23.27s | Avg: 23.21s | Elapsed: 14.7m | Est. remaining: 4.6m
+
+train/kl                                 @ write 38 = 3650.8887
+train/bpd                                @ write 38 = 4.5260
+train/elbo                               @ write 38 = 9637.4502
+train/kl obj                             @ write 38 = 3653.0598
+train/log p(x|z)                         @ write 38 = -5986.5615
+
+test/kl                                  @ write 38 = 3670.2737
+test/bpd                                 @ write 38 = 4.5919
+test/elbo                                @ write 38 = 9777.6484
+test/kl obj                              @ write 38 = 3671.9248
+test/log p(x|z)                          @ write 38 = -6107.3745
+
+Epoch 39/50 - Time: 23.07s | Avg: 23.20s | Elapsed: 15.1m | Est. remaining: 4.3m
+
+train/kl                                 @ write 39 = 3658.3323
+train/bpd                                @ write 39 = 4.5252
+train/elbo                               @ write 39 = 9635.6660
+train/kl obj                             @ write 39 = 3660.4187
+train/log p(x|z)                         @ write 39 = -5977.3335
+
+test/kl                                  @ write 39 = 3702.0530
+test/bpd                                 @ write 39 = 4.5269
+test/elbo                                @ write 39 = 9639.4482
+test/kl obj                              @ write 39 = 3703.7966
+test/log p(x|z)                          @ write 39 = -5937.3945
+
+saving best model
+Epoch 40/50 - Time: 23.17s | Avg: 23.20s | Elapsed: 15.5m | Est. remaining: 3.9m
+
+train/kl                                 @ write 40 = 3696.4126
+train/bpd                                @ write 40 = 4.5122
+train/elbo                               @ write 40 = 9608.1436
+train/kl obj                             @ write 40 = 3698.5457
+train/log p(x|z)                         @ write 40 = -5911.7314
+
+test/kl                                  @ write 40 = 3704.8230
+test/bpd                                 @ write 40 = 4.5331
+test/elbo                                @ write 40 = 9652.5049
+test/kl obj                              @ write 40 = 3707.4705
+test/log p(x|z)                          @ write 40 = -5947.6812
+
+Epoch 41/50 - Time: 23.24s | Avg: 23.20s | Elapsed: 15.9m | Est. remaining: 3.5m
+
+train/kl                                 @ write 41 = 3724.8545
+train/bpd                                @ write 41 = 4.4988
+train/elbo                               @ write 41 = 9579.5283
+train/kl obj                             @ write 41 = 3726.9763
+train/log p(x|z)                         @ write 41 = -5854.6743
+
+test/kl                                  @ write 41 = 3762.5474
+test/bpd                                 @ write 41 = 4.4867
+test/elbo                                @ write 41 = 9553.6543
+test/kl obj                              @ write 41 = 3764.3411
+test/log p(x|z)                          @ write 41 = -5791.1069
+
+saving best model
+Epoch 42/50 - Time: 23.45s | Avg: 23.21s | Elapsed: 16.2m | Est. remaining: 3.1m
+
+train/kl                                 @ write 42 = 3771.0911
+train/bpd                                @ write 42 = 4.4868
+train/elbo                               @ write 42 = 9553.9180
+train/kl obj                             @ write 42 = 3773.1995
+train/log p(x|z)                         @ write 42 = -5782.8267
+
+test/kl                                  @ write 42 = 3770.9800
+test/bpd                                 @ write 42 = 4.4780
+test/elbo                                @ write 42 = 9535.2041
+test/kl obj                              @ write 42 = 3773.0200
+test/log p(x|z)                          @ write 42 = -5764.2246
+
+saving best model
+Epoch 43/50 - Time: 23.39s | Avg: 23.21s | Elapsed: 16.6m | Est. remaining: 2.7m
+
+train/kl                                 @ write 43 = 3785.7981
+train/bpd                                @ write 43 = 4.4802
+train/elbo                               @ write 43 = 9539.8379
+train/kl obj                             @ write 43 = 3787.8867
+train/log p(x|z)                         @ write 43 = -5754.0391
+
+test/kl                                  @ write 43 = 3770.8188
+test/bpd                                 @ write 43 = 4.4579
+test/elbo                                @ write 43 = 9492.3467
+test/kl obj                              @ write 43 = 3773.0273
+test/log p(x|z)                          @ write 43 = -5721.5273
+
+saving best model
+Epoch 44/50 - Time: 23.12s | Avg: 23.21s | Elapsed: 17.0m | Est. remaining: 2.3m
+
+train/kl                                 @ write 44 = 3803.7034
+train/bpd                                @ write 44 = 4.4781
+train/elbo                               @ write 44 = 9535.5166
+train/kl obj                             @ write 44 = 3805.7161
+train/log p(x|z)                         @ write 44 = -5731.8145
+
+test/kl                                  @ write 44 = 3835.9136
+test/bpd                                 @ write 44 = 4.4937
+test/elbo                                @ write 44 = 9568.7461
+test/kl obj                              @ write 44 = 3838.1387
+test/log p(x|z)                          @ write 44 = -5732.8325
+
+Epoch 45/50 - Time: 23.15s | Avg: 23.21s | Elapsed: 17.4m | Est. remaining: 1.9m
+
+train/kl                                 @ write 45 = 3806.8264
+train/bpd                                @ write 45 = 4.4724
+train/elbo                               @ write 45 = 9523.2168
+train/kl obj                             @ write 45 = 3808.8059
+train/log p(x|z)                         @ write 45 = -5716.3901
+
+test/kl                                  @ write 45 = 3808.6804
+test/bpd                                 @ write 45 = 4.4366
+test/elbo                                @ write 45 = 9446.9775
+test/kl obj                              @ write 45 = 3811.0317
+test/log p(x|z)                          @ write 45 = -5638.2969
+
+saving best model
+Epoch 46/50 - Time: 23.47s | Avg: 23.22s | Elapsed: 17.8m | Est. remaining: 1.5m
+
+train/kl                                 @ write 46 = 3830.6270
+train/bpd                                @ write 46 = 4.4643
+train/elbo                               @ write 46 = 9505.9492
+train/kl obj                             @ write 46 = 3832.5737
+train/log p(x|z)                         @ write 46 = -5675.3228
+
+test/kl                                  @ write 46 = 3823.3325
+test/bpd                                 @ write 46 = 4.4584
+test/elbo                                @ write 46 = 9493.4795
+test/kl obj                              @ write 46 = 3825.2793
+test/log p(x|z)                          @ write 46 = -5670.1475
+
+Epoch 47/50 - Time: 23.43s | Avg: 23.22s | Elapsed: 18.2m | Est. remaining: 1.2m
+
+train/kl                                 @ write 47 = 3865.4841
+train/bpd                                @ write 47 = 4.4505
+train/elbo                               @ write 47 = 9476.6846
+train/kl obj                             @ write 47 = 3867.4077
+train/log p(x|z)                         @ write 47 = -5611.2002
+
+test/kl                                  @ write 47 = 3879.8298
+test/bpd                                 @ write 47 = 4.4798
+test/elbo                                @ write 47 = 9538.9863
+test/kl obj                              @ write 47 = 3882.1980
+test/log p(x|z)                          @ write 47 = -5659.1562
+
+Epoch 48/50 - Time: 23.42s | Avg: 23.22s | Elapsed: 18.6m | Est. remaining: 0.8m
+
+train/kl                                 @ write 48 = 3874.1914
+train/bpd                                @ write 48 = 4.4481
+train/elbo                               @ write 48 = 9471.5479
+train/kl obj                             @ write 48 = 3876.0942
+train/log p(x|z)                         @ write 48 = -5597.3564
+
+test/kl                                  @ write 48 = 3889.8254
+test/bpd                                 @ write 48 = 4.4317
+test/elbo                                @ write 48 = 9436.5498
+test/kl obj                              @ write 48 = 3891.4255
+test/log p(x|z)                          @ write 48 = -5546.7246
+
+saving best model
+Epoch 49/50 - Time: 23.29s | Avg: 23.23s | Elapsed: 19.0m | Est. remaining: 0.4m
+
+train/kl                                 @ write 49 = 3895.3284
+train/bpd                                @ write 49 = 4.4444
+train/elbo                               @ write 49 = 9463.6787
+train/kl obj                             @ write 49 = 3897.2107
+train/log p(x|z)                         @ write 49 = -5568.3506
+
+test/kl                                  @ write 49 = 3891.2644
+test/bpd                                 @ write 49 = 4.4367
+test/elbo                                @ write 49 = 9447.2168
+test/kl obj                              @ write 49 = 3892.8367
+test/log p(x|z)                          @ write 49 = -5555.9521
+
+Epoch 50/50 - Time: 23.08s | Avg: 23.22s | Elapsed: 19.4m | Est. remaining: 0.0m
+
+============================================================
+Training completed!
+Total time: 19.35 minutes (0.32 hours)
+Average per epoch: 23.22 seconds (0.39 minutes)
+============================================================
